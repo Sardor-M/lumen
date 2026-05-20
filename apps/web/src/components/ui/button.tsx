@@ -43,12 +43,24 @@ export function Button({
     className,
     variant = 'default',
     size = 'default',
+    nativeButton,
+    render,
     ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+    /**
+     * When `render` is provided we're swapping the underlying DOM element for
+     * something else (typically `<Link>` → `<a>`). Base UI defaults to a
+     * native `<button>` and emits a console warning if the rendered element
+     * isn't one. Infer `nativeButton={false}` whenever a `render` prop is
+     * present so call sites don't need to pass it themselves.
+     */
+    const resolvedNativeButton = nativeButton ?? render === undefined;
     return (
         <ButtonPrimitive
             data-slot="button"
             className={cn(buttonVariants({ variant, size, className }))}
+            nativeButton={resolvedNativeButton}
+            render={render}
             {...props}
         />
     );

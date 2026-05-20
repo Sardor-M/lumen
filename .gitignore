@@ -20,6 +20,7 @@ next-env.d.ts
 
 /docs/docs_analysis_in_depth
 /docs/docs-temp
+/docs/articles
 /test-benchmarks
 
 # CLI package — iCloud duplicate of node_modules
