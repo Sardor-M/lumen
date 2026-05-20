@@ -11,6 +11,8 @@ import {
     LogOut,
     Sparkles,
     ChevronsUpDown,
+    Activity,
+    BookOpen,
 } from 'lucide-react';
 import {
     Sidebar,
@@ -33,13 +35,16 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { Session } from '@/lib/auth';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 const navItems = [
     { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
     { href: '/dashboard/search', label: 'Search', icon: Search },
     { href: '/dashboard/concepts', label: 'Concepts', icon: Boxes },
-    { href: '/dashboard/graph', label: 'Graph', icon: GitFork },
+    { href: '/dashboard/graph', label: 'Memory', icon: GitFork },
     { href: '/dashboard/sources', label: 'Sources', icon: FileText },
+    { href: '/dashboard/activity', label: 'Activity', icon: Activity },
+    { href: '/dashboard/learn', label: 'Learn', icon: BookOpen },
 ];
 
 export function AppSidebar({ session }: { session: Session }) {
@@ -55,10 +60,13 @@ export function AppSidebar({ session }: { session: Session }) {
     return (
         <Sidebar>
             <SidebarHeader className="px-4 py-5">
-                <Link href="/" className="flex items-center gap-2">
-                    <Sparkles className="h-5 w-5" />
-                    <span className="text-lg font-bold tracking-tight">Lumen</span>
-                </Link>
+                <div className="flex items-center justify-between gap-2">
+                    <Link href="/" className="flex items-center gap-2">
+                        <Sparkles className="h-5 w-5" />
+                        <span className="text-lg font-bold tracking-tight">Lumen</span>
+                    </Link>
+                    <ThemeToggle />
+                </div>
             </SidebarHeader>
 
             <SidebarSeparator />
@@ -95,26 +103,28 @@ export function AppSidebar({ session }: { session: Session }) {
                 <SidebarMenu>
                     <SidebarMenuItem>
                         <DropdownMenu>
-                            <DropdownMenuTrigger>
-                                <SidebarMenuButton
-                                    size="lg"
-                                    className="data-[state=open]:bg-sidebar-accent"
-                                >
-                                    <Avatar className="h-7 w-7 rounded-md">
-                                        <AvatarFallback className="rounded-md text-[10px]">
-                                            {initials}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <div className="grid flex-1 text-left text-sm leading-tight">
-                                        <span className="truncate font-semibold">
-                                            {session.user.name}
-                                        </span>
-                                        <span className="text-muted-foreground truncate text-xs">
-                                            {session.user.email}
-                                        </span>
-                                    </div>
-                                    <ChevronsUpDown className="ml-auto" />
-                                </SidebarMenuButton>
+                            <DropdownMenuTrigger
+                                render={
+                                    <SidebarMenuButton
+                                        size="lg"
+                                        className="data-[state=open]:bg-sidebar-accent"
+                                    />
+                                }
+                            >
+                                <Avatar className="h-7 w-7 rounded-md">
+                                    <AvatarFallback className="rounded-md text-[10px]">
+                                        {initials}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div className="grid flex-1 text-left text-sm leading-tight">
+                                    <span className="truncate font-semibold">
+                                        {session.user.name}
+                                    </span>
+                                    <span className="text-muted-foreground truncate text-xs">
+                                        {session.user.email}
+                                    </span>
+                                </div>
+                                <ChevronsUpDown className="ml-auto" />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                                 side="top"

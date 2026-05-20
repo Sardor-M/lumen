@@ -233,3 +233,96 @@ export function latestJournalSyncId(): string | null {
     };
     return row.m;
 }
+
+/**
+ * One row in the activity feed. Strips the raw payload down to a short
+ * human-readable preview so the web UI can render rows without re-parsing
+ * the full JSON or risking leaking sensitive fields.
+ */
+export type JournalListRow = {
+    sync_id: string;
+    op: JournalOp;
+    entity_id: string;
+    scope_kind: ScopeKind;
+    scope_key: string;
+    device_id: string;
+    created_at: string;
+    pushed_at: string | null;
+    pulled_at: string | null;
+    applied_at: string | null;
+    payload_preview: string;
+};
+
+function previewPayload(op: JournalOp, payload: Record<string, unknown>): string {
+    const trim = (s: unknown): string => String(s ?? '').slice(0, 80);
+    switch (op) {
+        case 'trajectory':
+            return trim(payload.source_id);
+        case 'feedback':
+            return trim(`${payload.delta} ${payload.reason ?? ''}`).trim();
+        case 'truth_update':
+            return trim(`${payload.concept_slug}: ${payload.new_truth}`);
+        case 'retire':
+            return trim(`${payload.concept_slug}: ${payload.reason}`);
+        case 'concept_create':
+            return trim(`${payload.slug}: ${payload.name ?? ''}`);
+    }
+}
+
+/**
+ * Most recent journal entries, newest first. UUIDv7-shaped sync_ids sort in
+ * insertion order so ORDER BY sync_id DESC is equivalent to ORDER BY
+ * created_at DESC but uses the primary-key index.
+ */
+export function listJournalRecent(limit: number): JournalListRow[] {
+    const rows = getDb()
+        .prepare('SELECT * FROM sync_journal ORDER BY sync_id DESC LIMIT ?')
+        .all(limit) as RawJournalRow[];
+    return rows.map((row) => {
+        let parsed: Record<string, unknown> = {};
+        try {
+            parsed = JSON.parse(row.payload) as Record<string, unknown>;
+        } catch {
+            /** Malformed payload - leave preview empty rather than crashing the feed. */
+        }
+        return {
+            sync_id: row.sync_id,
+            op: row.op as JournalOp,
+            entity_id: row.entity_id,
+            scope_kind: row.scope_kind as ScopeKind,
+            scope_key: row.scope_key,
+            device_id: row.device_id,
+            created_at: row.created_at,
+            pushed_at: row.pushed_at,
+            pulled_at: row.pulled_at,
+            applied_at: row.applied_at,
+            payload_preview: previewPayload(row.op as JournalOp, parsed),
+        };
+    });
+}
+
+/** Distinct devices that have written anything to the journal. */
+export function countDevices(): number {
+    const row = getDb()
+        .prepare('SELECT COUNT(DISTINCT device_id) as c FROM sync_journal')
+        .get() as { c: number };
+    return row.c;
+}
+
+/** Entries pulled from the relay but not yet applied locally. */
+export function countPendingApply(): number {
+    const row = getDb()
+        .prepare(
+            'SELECT COUNT(*) as c FROM sync_journal WHERE pulled_at IS NOT NULL AND applied_at IS NULL',
+        )
+        .get() as { c: number };
+    return row.c;
+}
+
+/** Entries created at or after the given ISO timestamp. */
+export function countJournalSince(isoTimestamp: string): number {
+    const row = getDb()
+        .prepare('SELECT COUNT(*) as c FROM sync_journal WHERE created_at >= ?')
+        .get(isoTimestamp) as { c: number };
+    return row.c;
+}
