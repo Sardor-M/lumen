@@ -46,20 +46,27 @@ function ResetPasswordForm() {
             return;
         }
 
-        const { error: authError } = await authClient.resetPassword({
-            newPassword: parsed.data.password,
-            token,
-        });
+        try {
+            const { error: authError } = await authClient.resetPassword({
+                newPassword: parsed.data.password,
+                token,
+            });
 
-        if (authError) {
-            setError(authError.message ?? 'Reset failed — the link may have expired');
+            if (authError) {
+                setError(authError.message ?? 'Reset failed — the link may have expired');
+                return;
+            }
+
+            setDone(true);
+            setTimeout(() => router.push('/login'), 1500);
+        } catch (err) {
+            setError(
+                'Reset failed — the link may have expired' +
+                    (err instanceof Error ? `: ${err.message}` : ''),
+            );
+        } finally {
             setLoading(false);
-            return;
         }
-
-        setDone(true);
-        setLoading(false);
-        setTimeout(() => router.push('/login'), 1500);
     }
 
     /** No token at all, or Better Auth signaled an invalid/expired one via ?error=. */
