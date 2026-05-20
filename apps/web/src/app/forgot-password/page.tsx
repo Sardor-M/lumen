@@ -30,19 +30,23 @@ export default function ForgotPasswordPage() {
             return;
         }
 
-        const { error: authError } = await authClient.requestPasswordReset({
-            email: parsed.data.email,
-            redirectTo: '/reset-password',
-        });
+        try {
+            const { error: authError } = await authClient.requestPasswordReset({
+                email: parsed.data.email,
+                redirectTo: '/reset-password',
+            });
 
-        if (authError) {
-            setError(authError.message ?? 'Could not send reset link');
+            if (authError) {
+                setError(authError.message ?? 'Could not send reset link');
+                return;
+            }
+
+            setSent(true);
+        } catch {
+            setError('Could not send reset link');
+        } finally {
             setLoading(false);
-            return;
         }
-
-        setSent(true);
-        setLoading(false);
     }
 
     return (
