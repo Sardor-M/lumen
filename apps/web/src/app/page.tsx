@@ -4,6 +4,7 @@ import { Sparkles, ArrowRight } from 'lucide-react';
 import { auth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LumenStack } from '@/components/landing/lumen-stack';
 
 export default async function Home() {
     const session = await auth.api.getSession({ headers: await headers() });
@@ -12,51 +13,57 @@ export default async function Home() {
     return (
         <div className="bg-background text-foreground min-h-screen">
             <TopNav signedIn={signedIn} />
-            <main className="mx-auto max-w-3xl px-6 pt-32 pb-24 sm:pt-36">
-                <header className="space-y-7">
-                    <div className="flex items-center gap-3">
-                        <span className="bg-foreground text-background flex h-11 w-11 items-center justify-center rounded-2xl">
-                            <Sparkles className="h-5 w-5" />
-                        </span>
-                        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Lumen</h1>
-                    </div>
+            <main className="pt-32 pb-24 sm:pt-36">
+                <div className="mx-auto max-w-3xl px-6">
+                    <header className="space-y-7">
+                        <div className="flex items-center gap-3">
+                            <span className="bg-foreground text-background flex h-11 w-11 items-center justify-center rounded-2xl">
+                                <Sparkles className="h-5 w-5" />
+                            </span>
+                            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Lumen</h1>
+                        </div>
 
-                    <p className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                        The knowledge compiler built for coding agents.
-                    </p>
+                        <p className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+                            The knowledge compiler built for coding agents.
+                        </p>
 
-                    <p className="text-muted-foreground max-w-2xl text-base leading-relaxed">
-                        Local-first. Articles, papers, PDFs, and agent trajectories go in. A
-                        queryable knowledge graph comes out. Sync across devices is end-to-end
-                        encrypted; the relay never sees your data.
-                    </p>
+                        <p className="text-muted-foreground max-w-2xl text-base leading-relaxed">
+                            Local-first. Articles, papers, PDFs, and agent trajectories go in. A
+                            queryable knowledge graph comes out. Sync across devices is end-to-end
+                            encrypted; the relay never sees your data.
+                        </p>
 
-                    <div className="flex flex-wrap gap-3 pt-2">
-                        <Button
-                            size="lg"
-                            render={<Link href={signedIn ? '/dashboard' : '/login'} />}
-                        >
-                            {signedIn ? 'Open dashboard' : 'Get started'}
-                            <ArrowRight className="ml-1 h-4 w-4" />
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="lg"
-                            render={
-                                <a
-                                    href="https://github.com/Sardor-M/lumen"
-                                    target="_blank"
-                                    rel="noreferrer"
-                                />
-                            }
-                        >
-                            <GithubMark className="mr-1 h-4 w-4" />
-                            View on GitHub
-                        </Button>
-                    </div>
-                </header>
+                        <div className="flex flex-wrap gap-3 pt-2">
+                            <Button
+                                size="lg"
+                                render={<Link href={signedIn ? '/dashboard' : '/login'} />}
+                            >
+                                {signedIn ? 'Open dashboard' : 'Get started'}
+                                <ArrowRight className="ml-1 h-4 w-4" />
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="lg"
+                                render={
+                                    <a
+                                        href="https://github.com/Sardor-M/lumen"
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    />
+                                }
+                            >
+                                <GithubMark className="mr-1 h-4 w-4" />
+                                View on GitHub
+                            </Button>
+                        </div>
+                    </header>
+                </div>
 
-                <section className="mt-16 space-y-5">
+                <div className="mt-16">
+                    <LumenStack />
+                </div>
+
+                <section className="mx-auto mt-16 max-w-3xl space-y-5 px-6">
                     <p className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
                         Features
                     </p>
@@ -89,7 +96,7 @@ export default async function Home() {
                     </ul>
                 </section>
 
-                <footer className="text-muted-foreground border-border/60 mt-24 border-t pt-6 text-xs">
+                <footer className="text-muted-foreground border-border/60 mx-auto mt-24 max-w-3xl border-t px-6 pt-6 text-xs">
                     Built with <code className="bg-muted rounded px-1 font-mono">lumen-kb</code> ·
                     MIT licensed · Sync relay is a single-file Cloudflare Worker.
                 </footer>
