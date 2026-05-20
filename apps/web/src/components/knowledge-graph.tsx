@@ -334,9 +334,13 @@ export function KnowledgeGraph({
 
     const handleNodeHover = useCallback((node: GraphNode | null) => {
         setHoveredId(node?.id ?? null);
-        if (typeof document !== 'undefined') {
-            document.body.style.cursor = node ? 'pointer' : '';
-        }
+        document.body.style.cursor = node ? 'pointer' : '';
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            document.body.style.cursor = '';
+        };
     }, []);
 
     const drawLink = useCallback(
@@ -631,12 +635,12 @@ function Legend({
                             label="Disconnected"
                             help="No edges yet — usually a concept that only appears in one source."
                         />
-                        <a
+                        <Link
                             href="/dashboard/learn/graph-density"
                             className="text-foreground inline-block underline underline-offset-2"
                         >
                             Why? →
-                        </a>
+                        </Link>
                     </CollapsibleSection>
 
                     {communities.length > 0 && (
