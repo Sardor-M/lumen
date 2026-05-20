@@ -15,6 +15,7 @@ import type { ForceGraphMethods, ForceGraphProps } from 'react-force-graph-2d';
 import Link from 'next/link';
 import { ArrowUpRight, ChevronDown, Info, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import type { GraphSnapshot } from '@/lib/lumen';
 
 /**
@@ -530,10 +531,10 @@ function Toolbar({
                     aria-pressed={hideSingletons}
                 >
                     <span
-                        className={
-                            'inline-block h-2 w-2 rounded-full ' +
-                            (hideSingletons ? 'bg-emerald-500' : 'bg-muted-foreground/40')
-                        }
+                        className={cn(
+                            'inline-block h-2 w-2 rounded-full',
+                            hideSingletons ? 'bg-emerald-500' : 'bg-muted-foreground/40',
+                        )}
                     />
                     {hideSingletons
                         ? `Hiding ${singletonCount} disconnected`
@@ -716,7 +717,7 @@ function CollapsibleSection({ title, children }: { title: string; children: Reac
             >
                 {title}
                 <ChevronDown
-                    className={'h-3 w-3 transition-transform ' + (open ? '' : '-rotate-90')}
+                    className={cn('h-3 w-3 transition-transform', !open && '-rotate-90')}
                 />
             </button>
             {open && <div className="mt-2 space-y-1.5">{children}</div>}
@@ -738,12 +739,10 @@ function Swatch({
     return (
         <div className="flex items-start gap-2">
             <span
-                className={
-                    'mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full ' +
-                    (shape === 'dot'
-                        ? (color ?? 'bg-foreground')
-                        : 'border-muted-foreground/60 border border-dashed')
-                }
+                className={cn(
+                    'mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full',
+                    shape === 'dot' ? (color ?? 'bg-foreground') : 'border-muted-foreground/60 border border-dashed',
+                )}
             />
             <p>
                 <span className="font-medium">{label}</span>{' '}
