@@ -6,7 +6,9 @@
     "type": "module",
     "scripts": {
         "build": "turbo build",
-        "dev": "turbo dev",
+        "dev": "turbo dev --filter=!@lumen/relay",
+        "dev:all": "turbo dev",
+        "dev:relay": "turbo dev --filter=@lumen/relay",
         "lint": "turbo lint",
         "test": "turbo test",
         "format": "prettier --write \"apps/*/src/**/*.{ts,tsx}\"",

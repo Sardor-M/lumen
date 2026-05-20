@@ -23,6 +23,7 @@
         "./search/*": "./src/search/*.ts",
         "./graph/*": "./src/graph/*.ts",
         "./profile/*": "./src/profile/*.ts",
+        "./sync/*": "./src/sync/*.ts",
         "./types": "./src/types/index.ts",
         "./utils/paths": "./src/utils/paths.ts"
     },
@@ -54,7 +55,7 @@
         "node": ">=22"
     },
     "scripts": {
-        "dev": "tsx src/cli.ts",
+        "dev": "tsup src/cli.ts --format esm --watch",
         "build": "tsup src/cli.ts --format esm --dts --clean",
         "start": "node dist/cli.js",
         "lint": "eslint src/ && tsc --noEmit",
