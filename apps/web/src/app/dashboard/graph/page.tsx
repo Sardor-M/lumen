@@ -3,6 +3,7 @@ import { GitFork, Network } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { graphSnapshot } from '@/lib/lumen';
+import { KnowledgeGraph } from '@/components/knowledge-graph';
 
 export default function GraphPage() {
     const snapshot = graphSnapshot({ limit: 200 });
@@ -11,15 +12,17 @@ export default function GraphPage() {
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-2xl font-bold tracking-tight">Graph</h1>
+                <h1 className="text-2xl font-bold tracking-tight">Memory</h1>
                 <p className="text-muted-foreground mt-1 text-sm">
                     {hasGraph
                         ? `${snapshot.nodes.length} concepts · ${snapshot.edges.length} edges · ${snapshot.communities.length} communities`
-                        : 'Interactive knowledge graph visualization.'}
+                        : 'Your knowledge graph appears here once you compile your first sources.'}
                 </p>
             </div>
 
-            {!hasGraph && (
+            {hasGraph ? (
+                <KnowledgeGraph snapshot={snapshot} />
+            ) : (
                 <Card className="border-dashed">
                     <CardContent className="flex flex-col items-center justify-center py-16">
                         <Network className="text-muted-foreground/30 mb-4 h-12 w-12" />
