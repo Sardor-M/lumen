@@ -16,6 +16,7 @@ import {
     getConcept,
     getConceptsBySlugs,
     getSourceConcepts,
+    getSourcesForConcept,
     listConcepts,
 } from 'lumen-kb/store/concepts';
 import { countChunksBySource, getChunksBySource } from 'lumen-kb/store/chunks';
@@ -27,6 +28,14 @@ import { godNodes, neighborhood } from 'lumen-kb/graph/engine';
 import { pagerank } from 'lumen-kb/graph/pagerank';
 import { detectCommunities } from 'lumen-kb/graph/cluster';
 import { getProfile } from 'lumen-kb/profile/cache';
+import {
+    explorationCostAvoided,
+    frequentTopics,
+    queryCountByTool,
+    recentQueries,
+} from 'lumen-kb/store/query-log';
+import { feedbackTotal, listFeedback } from 'lumen-kb/store/feedback';
+import { getBackLinks, getLinksFrom } from 'lumen-kb/store/links';
 import {
     countDevices,
     countJournal,
@@ -129,7 +138,19 @@ export function concepts() {
     return listConcepts();
 }
 
-export function concept(slug: string) {
+/**
+ * Single-concept detail bundle. Aside from the concept row itself, we
+ * include:
+ *   - the 1-hop neighborhood for the relationship cards,
+ *   - inbound + outbound typed edges from the `edges` table,
+ *   - the sources this concept was extracted from (with relevance),
+ *   - the most recent feedback events + cumulative net score, and
+ *   - the typed `concept_links` table (separate from `edges`) — used
+ *     for in-prose backlinks generated from compiled_truth scanning.
+ * Memoized so the page server component + any sibling components
+ * rendering against the same slug share one read.
+ */
+export const concept = cache((slug: string) => {
     if (!isInitialized()) return null;
     const c = getConcept(slug);
     if (!c) return null;
@@ -138,7 +159,60 @@ export function concept(slug: string) {
         neighborhood: neighborhood(slug, 1),
         outgoing: getEdgesFrom(slug),
         incoming: getEdgesTo(slug),
+        sources: getSourcesForConcept(slug),
+        feedback: listFeedback(slug, 10),
+        feedback_net: feedbackTotal(slug),
+        outbound_links: getLinksFrom(slug),
+        backlinks: getBackLinks(slug),
     };
+});
+
+/* =========================================================================
+   Agent telemetry surface — the query_log + cost-avoided aggregates
+   captured by every MCP tool call. Used by the overview page so the
+   user can see what the agent has been asking, when, and how much
+   exploration cost it saved.
+   ========================================================================= */
+
+/** Last N tool calls — tool_name, query_text, timestamp. */
+export function recentActivity(limit = 20) {
+    if (!isInitialized()) return [];
+    return recentQueries(limit);
+}
+
+/** Top query strings by frequency — what the agent keeps asking about. */
+export function hotTopics(limit = 8) {
+    if (!isInitialized()) return [];
+    return frequentTopics(limit);
+}
+
+/** Histogram of tool calls keyed by MCP tool name. */
+export function toolCallStats() {
+    if (!isInitialized()) return {};
+    return queryCountByTool();
+}
+
+/**
+ * Exploration cost avoided over the last `days` days — sessions where
+ * the agent hit a known concept short-circuited what would otherwise
+ * have been a full exploration loop. Drives the "tokens saved" callout.
+ */
+export function savings(days = 7) {
+    if (!isInitialized()) {
+        return {
+            days,
+            total_sessions: 0,
+            skill_aided_sessions: 0,
+            exploration_sessions: 0,
+            hit_rate: 0,
+            baseline_tokens: 0,
+            with_skill_tokens: 0,
+            estimated_savings_tokens: 0,
+            estimated_savings_usd: 0,
+            by_scope: [],
+        };
+    }
+    return explorationCostAvoided(days);
 }
 
 export function graphSnapshot(opts?: { limit?: number }) {

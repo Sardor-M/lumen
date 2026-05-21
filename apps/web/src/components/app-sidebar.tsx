@@ -3,16 +3,17 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-    LayoutDashboard,
-    Search,
-    Boxes,
-    GitFork,
-    FileText,
-    LogOut,
-    Sparkles,
-    ChevronsUpDown,
     Activity,
     BookOpen,
+    Bot,
+    Boxes,
+    ChevronsUpDown,
+    FileText,
+    GitFork,
+    LayoutDashboard,
+    LogOut,
+    Search,
+    Sparkles,
 } from 'lucide-react';
 import {
     Sidebar,
@@ -43,7 +44,8 @@ const navItems = [
     { href: '/concepts', label: 'Concepts', icon: Boxes },
     { href: '/graph', label: 'Memory', icon: GitFork },
     { href: '/sources', label: 'Sources', icon: FileText },
-    { href: '/activity', label: 'Activity', icon: Activity },
+    { href: '/agent-activity', label: 'Agent activity', icon: Bot },
+    { href: '/activity', label: 'Sync', icon: Activity },
     { href: '/learn', label: 'Learn', icon: BookOpen },
 ];
 

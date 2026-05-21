@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import {
-    FileText,
-    Boxes,
-    GitFork,
-    BarChart3,
     Activity,
-    ChevronRight,
-    Sparkles,
+    BarChart3,
     BookOpen,
+    Boxes,
+    ChevronRight,
+    FileText,
+    GitFork,
+    Sparkles,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { graphSnapshot, profile, status, syncActivity } from '@/lib/lumen';
