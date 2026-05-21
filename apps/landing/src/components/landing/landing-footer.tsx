@@ -73,9 +73,9 @@ function FootCol({ title, items }: { title: string; items: { label: string; href
                                 {item.label} <span className="arrow">→</span>
                             </a>
                         ) : (
-                            <a>
+                            <span>
                                 {item.label} <span className="arrow">→</span>
-                            </a>
+                            </span>
                         )}
                     </li>
                 ))}
