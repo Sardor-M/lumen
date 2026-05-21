@@ -9,6 +9,7 @@ const learnTopics = [
     { href: '/dashboard/learn/algorithms', label: 'Algorithms' },
     { href: '/dashboard/learn/graph-density', label: 'Graph density' },
     { href: '/dashboard/learn/memory', label: 'Memory' },
+    { href: '/dashboard/learn/sync', label: 'Sync' },
 ];
 
 export function LearnNav() {

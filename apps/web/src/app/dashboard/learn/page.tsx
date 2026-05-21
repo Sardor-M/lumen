@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight, Cpu, BarChart3, Brain } from 'lucide-react';
+import { ChevronRight, Cpu, BarChart3, Brain, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const topics = [
@@ -23,6 +23,13 @@ const topics = [
         title: 'Memory & self-improvement',
         description:
             'How agents capture trajectories, why concepts get scored and retired, and what makes the knowledge base improve as it grows.',
+    },
+    {
+        href: '/dashboard/learn/sync',
+        icon: RefreshCw,
+        title: 'How to sync multiple devices',
+        description:
+            'Five-step tutorial: deploy the Cloudflare Worker relay, share the master key, install the daemon. Your brain auto-syncs across every laptop.',
     },
 ];
 
