@@ -48,7 +48,7 @@ export function LandingNav() {
                     <a href="#mcp" className="ll-nav-link ll-hide-sm">
                         MCP
                     </a>
-                    <a href={`${WEB_URL}/dashboard/learn`} className="ll-nav-link">
+                    <a href={`${WEB_URL}/learn`} className="ll-nav-link">
                         Docs
                     </a>
                     <span className="ll-nav-sep" aria-hidden="true" />
