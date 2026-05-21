@@ -16,7 +16,7 @@ export function LandingFooter() {
                         title="Product"
                         items={[
                             { label: 'Install', href: `${WEB_URL}/signup` },
-                            { label: 'Docs', href: `${WEB_URL}/dashboard/learn` },
+                            { label: 'Docs', href: `${WEB_URL}/learn` },
                             { label: 'Changelog' },
                             { label: 'Roadmap' },
                         ]}
