@@ -38,13 +38,13 @@ import type { Session } from '@/lib/auth';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const navItems = [
-    { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-    { href: '/dashboard/search', label: 'Search', icon: Search },
-    { href: '/dashboard/concepts', label: 'Concepts', icon: Boxes },
-    { href: '/dashboard/graph', label: 'Memory', icon: GitFork },
-    { href: '/dashboard/sources', label: 'Sources', icon: FileText },
-    { href: '/dashboard/activity', label: 'Activity', icon: Activity },
-    { href: '/dashboard/learn', label: 'Learn', icon: BookOpen },
+    { href: '/', label: 'Overview', icon: LayoutDashboard },
+    { href: '/search', label: 'Search', icon: Search },
+    { href: '/concepts', label: 'Concepts', icon: Boxes },
+    { href: '/graph', label: 'Memory', icon: GitFork },
+    { href: '/sources', label: 'Sources', icon: FileText },
+    { href: '/activity', label: 'Activity', icon: Activity },
+    { href: '/learn', label: 'Learn', icon: BookOpen },
 ];
 
 export function AppSidebar({ session }: { session: Session }) {
@@ -78,8 +78,8 @@ export function AppSidebar({ session }: { session: Session }) {
                         <SidebarMenu>
                             {navItems.map((item) => {
                                 const active =
-                                    item.href === '/dashboard'
-                                        ? pathname === '/dashboard'
+                                    item.href === '/'
+                                        ? pathname === '/'
                                         : pathname.startsWith(item.href);
                                 return (
                                     <SidebarMenuItem key={item.href}>

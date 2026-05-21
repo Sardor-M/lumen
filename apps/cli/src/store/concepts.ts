@@ -295,6 +295,21 @@ export function listConcepts(): Concept[] {
 }
 
 /**
+ * Batched read for a known set of slugs — one SQL statement instead of N
+ * separate `getConcept` calls. Aliases are resolved up front so the IN-list
+ * hits canonical rows; missing slugs are silently dropped.
+ */
+export function getConceptsBySlugs(slugs: readonly string[]): Concept[] {
+    if (slugs.length === 0) return [];
+    const resolved = Array.from(new Set(slugs.map((s) => resolveAlias(s))));
+    const placeholders = resolved.map(() => '?').join(',');
+    const rows = getDb()
+        .prepare(`SELECT * FROM concepts WHERE slug IN (${placeholders})`)
+        .all(...resolved) as Record<string, unknown>[];
+    return rows.map(rowToConcept);
+}
+
+/**
  * Overwrite the cumulative score for a concept. Auto-retires when the new
  * score crosses the retire threshold (using `reason` if provided, else a
  * generic system reason). Idempotent - calling with an already-retired

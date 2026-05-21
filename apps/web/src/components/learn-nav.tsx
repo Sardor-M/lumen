@@ -5,11 +5,11 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 const learnTopics = [
-    { href: '/dashboard/learn', label: 'Overview', exact: true },
-    { href: '/dashboard/learn/algorithms', label: 'Algorithms' },
-    { href: '/dashboard/learn/graph-density', label: 'Graph density' },
-    { href: '/dashboard/learn/memory', label: 'Memory' },
-    { href: '/dashboard/learn/sync', label: 'Sync' },
+    { href: '/learn', label: 'Overview', exact: true },
+    { href: '/learn/algorithms', label: 'Algorithms' },
+    { href: '/learn/graph-density', label: 'Graph density' },
+    { href: '/learn/memory', label: 'Memory' },
+    { href: '/learn/sync', label: 'Sync' },
 ];
 
 export function LearnNav() {

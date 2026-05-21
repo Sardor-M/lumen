@@ -39,7 +39,15 @@ export function registerAdd(program: Command): void {
                 const db = getDb();
 
                 const VALID_SOURCE_TYPES: SourceType[] = [
-                    'url', 'pdf', 'youtube', 'arxiv', 'file', 'folder', 'code', 'dataset', 'image',
+                    'url',
+                    'pdf',
+                    'youtube',
+                    'arxiv',
+                    'file',
+                    'folder',
+                    'code',
+                    'dataset',
+                    'image',
                 ];
 
                 if (opts.type && !VALID_SOURCE_TYPES.includes(opts.type as SourceType)) {

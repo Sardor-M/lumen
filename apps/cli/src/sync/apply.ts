@@ -290,7 +290,8 @@ export function applyTruthUpdate(entry: JournalEntry): {
     const existing = db
         .prepare('SELECT compiled_truth, updated_at FROM concepts WHERE slug = ?')
         .get(slug) as { compiled_truth: string | null; updated_at: string } | undefined;
-    if (!existing) throw new Error(`truth_update: concept not found for slug "${slug}" — will retry`);
+    if (!existing)
+        throw new Error(`truth_update: concept not found for slug "${slug}" — will retry`);
 
     /**
      * Idempotency: after a successful won-path apply, concepts.updated_at
@@ -314,13 +315,7 @@ export function applyTruthUpdate(entry: JournalEntry): {
         db.prepare(
             `INSERT INTO concept_truth_history (slug, truth, updated_at, device_id, superseded_by)
              VALUES (?, ?, ?, ?, ?)`,
-        ).run(
-            slug,
-            existing.compiled_truth,
-            existing.updated_at,
-            localDeviceId,
-            entry.sync_id,
-        );
+        ).run(slug, existing.compiled_truth, existing.updated_at, localDeviceId, entry.sync_id);
         db.prepare(
             'UPDATE concepts SET compiled_truth = ?, summary = ?, updated_at = ? WHERE slug = ?',
         ).run(p.new_truth, p.new_truth, p.updated_at, slug);
