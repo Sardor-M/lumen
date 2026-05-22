@@ -20,6 +20,14 @@ import {
     listConcepts,
 } from 'lumen-kb/store/concepts';
 import { countChunksBySource, getChunksBySource } from 'lumen-kb/store/chunks';
+import {
+    getDatabaseStats,
+    getFtsStats,
+    getVectorStats,
+    type DatabaseStats,
+    type FtsStats,
+    type VectorStats,
+} from 'lumen-kb/store/stats';
 import { countEdges, listEdges, getEdgesFrom, getEdgesTo } from 'lumen-kb/store/edges';
 import { searchBm25 } from 'lumen-kb/search/bm25';
 import { searchTfIdf } from 'lumen-kb/search/tfidf';
@@ -290,5 +298,34 @@ export function syncActivity(opts?: { limit?: number }): SyncActivity {
         entries_24h: countJournalSince(since),
         pending_push: countUnpushed(),
         pending_apply: countPendingApply(),
+    };
+}
+
+/* =========================================================================
+   Storage introspection — drives /storage. Pure SQL + fs reads, fast
+   enough to run on every page render.
+   ========================================================================= */
+
+export type StorageSnapshot = {
+    initialized: boolean;
+    database: DatabaseStats | null;
+    vector: VectorStats | null;
+    fts: FtsStats | null;
+};
+
+/**
+ * Aggregate snapshot consumed by /storage. Returns a `not initialized`
+ * carrier when there's no workspace so the page can render its empty
+ * state without crashing.
+ */
+export function storageSnapshot(): StorageSnapshot {
+    if (!isInitialized()) {
+        return { initialized: false, database: null, vector: null, fts: null };
+    }
+    return {
+        initialized: true,
+        database: getDatabaseStats(),
+        vector: getVectorStats(),
+        fts: getFtsStats(),
     };
 }

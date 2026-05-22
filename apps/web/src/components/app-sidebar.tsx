@@ -8,6 +8,7 @@ import {
     Bot,
     Boxes,
     ChevronsUpDown,
+    Database,
     FileText,
     GitFork,
     LayoutDashboard,
@@ -46,6 +47,7 @@ const navItems = [
     { href: '/sources', label: 'Sources', icon: FileText },
     { href: '/agent-activity', label: 'Agent activity', icon: Bot },
     { href: '/activity', label: 'Sync', icon: Activity },
+    { href: '/storage', label: 'Storage', icon: Database },
     { href: '/learn', label: 'Learn', icon: BookOpen },
 ];
 
