@@ -1,18 +1,48 @@
-# Why I Built Lumen: Notes from the Substrate Layer
+# Lumen — A persistent brain for AI agents
 
-I've been using Claude Code for a few months and one feeling kept coming back to me at the end of long sessions: the agent was smart, but it didn't _know_ anything. It had read the internet. It had not read _my_ codebase, my notes, my last week's debugging. Every conversation began the same way — I'd explain we use Better Auth not Auth.js, I'd explain why the lumen-kb rename happened, I'd explain why we keep edges sparse, and an hour later it would forget.
+## Why I built it
 
-I got tired of explaining the same things to a tool that bills me per token.
+AI agents start every conversation with amnesia.
 
-Lumen is what I built to fix that. This article is less a reference doc and more notes on what I learned while building it — what worked, what surprised me, what I'd do differently if I started over. If you're considering whether something like this is worth building (or installing), this is the honest version.
+Claude Code, Cursor, Codex, Mastra harnesses, LangChain pipelines — these tools know the world, but they know nothing about _your_ world. The 200 papers you've read, the codebase you ship, the architecture decisions you made last quarter, the trajectory that finally worked when you caught that bug at 2am. Every session re-learns the same context, repeats the same mistakes, forgets user feedback from an hour ago, and burns token budget re-explaining the same domain.
 
-## The shape of the problem
+I got tired of this. I wanted an agent that became _compoundingly_ more useful over time. An agent that, week after week, got progressively _better_ at the actual work I do — not less, not the same, not "useful in a different way every Tuesday." If a new colleague joined the team and I had to explain "we use Better Auth, not Auth.js" forty times across forty conversations, I'd fire that colleague. So why was I tolerating that from a tool that bills me per token?
 
-The shape of the problem isn't _memory_ in the LLM sense. The model itself has a giant context window now — 1M tokens with Claude Sonnet — so within a single session it can remember plenty. The problem is across sessions, and across devices, and across the two devices being separate people who'd like to share notes.
+Lumen came out of that frustration. It's a local-first knowledge compiler that sits between everything the agent reads and everything the agent does. It builds a structured graph of what's been learned, captures patterns that worked, and feeds the right slices of that graph back into every session. The agent stops re-learning the same thing. It starts compounding.
 
-A single 1M context is impressive. A _persistent_ 1M context is what people actually want. And a persistent context that _agents_ can read and write to — not just humans — is what makes the difference between "knowledge tool" and "substrate."
+```
+┌─────────────────────────────────────────────────┐
+│                                                 │
+│   Without Lumen                                 │
+│   ─────────────                                 │
+│                                                 │
+│   Session 1  ──►  answer from training data     │
+│   Session 2  ──►  answer from training data     │
+│   Session 3  ──►  answer from training data     │
+│                                                 │
+│   Knowledge gained per session: 0               │
+│                                                 │
+└─────────────────────────────────────────────────┘
 
-That distinction matters more than I expected when I started. Let me try to make it concrete.
+┌─────────────────────────────────────────────────┐
+│                                                 │
+│   With Lumen                                    │
+│   ──────────                                    │
+│                                                 │
+│   Session 1 ─► read + capture + score ──┐       │
+│                                          │      │
+│                                          ▼      │
+│   Session 2 ─► brain-first lookup ──► add more  │
+│                                          │      │
+│                                          ▼      │
+│   Session 3 ─► finds richer brain ──► add more  │
+│                                                 │
+│   Knowledge gained per session: monotonically up│
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+
+This article explains how that loop works, what each part does, and where the honest trade-offs are.
 
 ### Knowledge compounding
 
@@ -40,33 +70,17 @@ With Lumen — compounding
            S1   S2   S3   S4   S5   S6
 ```
 
-The picture I had in my head when I started was the second row. Each conversation reads from a brain that already exists, then leaves it a little richer. The bars get taller. I didn't have a clean engineering plan for how to make that real — I had this picture, and I started building toward it.
+The bars grow because _every_ session writes something new into the brain — a captured trajectory, a `+1` on a useful concept, a corrected truth — and the next session reads a brain that already contains all of it.
 
-Most of the design choices in Lumen are downstream of that picture. Some of them surprised me.
+---
 
-## What I assumed I'd need (and didn't)
+## Lumen in one paragraph
 
-I assumed I'd need a vector database. Pinecone, Weaviate, FAISS, something. The dominant pattern in 2024-2025 for "agent memory" was embed everything → store in a vector DB → query by cosine similarity. So that's what I built first.
+Lumen is a local-first knowledge compiler with two interfaces — a CLI (`lumen-kb`) and a Model Context Protocol server (23 tools). It takes URLs, PDFs, papers, YouTube captions, entire code repos, datasets, even dashboard screenshots as input. It chunks the content, indexes it for hybrid search, runs a Claude pass per source to extract named concepts and weighted edges, and stores everything in a single SQLite file at `~/.lumen/lumen.db`. Agents that speak MCP — Claude Code, Cursor, Codex out of the box, anything else with a small adapter — can query the graph before answering, capture new ideas after responding, vote concepts up or down, and replay successful tool-call sequences from past work. The whole thing is one file. Back up that file, and you back up everything.
 
-It worked, but the operational cost was annoying. Re-embedding the corpus when I changed models. Index rebuilds. A separate process to run. Worst of all: the retrieval quality wasn't actually better than BM25 on a corpus I'd hand-curated. For a coding-agent use case where the corpus is "things I personally read" rather than "the entire web," embeddings were over-engineering.
+---
 
-I ripped it out. The current Lumen leads with BM25 (via SQLite FTS5) + TF-IDF (in-memory inverted index) + a graph walk on top of the compiled concept graph, fused with Reciprocal Rank Fusion. Vector embeddings are still available as a third lane if you want them, but they're opt-in — and after six months I've never actually turned them on.
-
-The lesson: for curated corpora, the dense-embedding story is a habit, not a requirement. Test against your actual workload before assuming you need the heavyweight option.
-
-## What I underestimated
-
-I underestimated the agent-write path. My first version of Lumen was read-mostly — agents could _query_ the brain, but writing was a manual step I had to do from the CLI. "Capture this conversation" was something I'd run after a session ended.
-
-That broke the loop. If writing the brain was a separate manual step, it never happened. The brain stagnated within a week.
-
-The fix was making `capture`, `brain_feedback`, `brain_ops` first-class MCP tools that the agent invokes _during_ the session. Combined with a Stop hook (`lumen install claude`) that nudges Claude to capture after every response, the write path stopped being manual. Now writing happens as a side effect of conversations — exactly the same surface area as reading.
-
-I wish I'd done that on day one. The retrieval lane is the obvious one to build; the write lane is the one that makes the whole substrate alive.
-
-## The shape it ended up
-
-Five horizontal stages. Pipeline-flavored. The diagram I keep returning to:
+## The pipeline
 
 ```
    INGEST              CHUNK               STORE              SEARCH
@@ -92,21 +106,78 @@ Five horizontal stages. Pipeline-flavored. The diagram I keep returning to:
                                                             LLM synthesis
 ```
 
-Each stage is independently testable. Each stage is deterministic except for the LLM `compile` and `ask` passes. The whole thing reads and writes one SQLite file at `~/.lumen/lumen.db`. There is no server. There is no daemon required to _use_ Lumen — the daemon is only for sync, and sync is opt-in.
+Five horizontal stages. Each stage is independently testable. None require network access except: (a) fetching URLs the user asked for, (b) optional Claude calls during `compile` / `ask`, (c) optional embedding-provider calls during `embed`.
 
-A few specific things I learned designing the pipeline.
+**Ingest** — per-format extractors. URLs via `@extractus/article-extractor`, PDFs via `pdf-parse`, YouTube via the Innertube captions API, arXiv via Atom + PDF, code repos via shallow `git clone` with `.gitignore`-aware walk and per-language signature extraction, datasets (CSV / TSV / JSONL / HuggingFace) as schema tables + 20-row previews, images via optional Tesseract OCR. Every extractor returns the same `ExtractionResult` shape, so downstream code never branches on input type.
 
-**Ingest is per-format, by extractor.** I started with one big generic ingester. It was bad. URLs need article-extractor cleanup, PDFs need text-stream extraction, YouTube needs the Innertube captions API, code needs `.gitignore`-aware walks and per-language signature extraction. Forcing all of these into one path produced uniformly poor extraction. Splitting them into per-format extractors that all return the same `ExtractionResult` type produced uniformly _good_ extraction.
+**Chunk** — markdown-aware structural splitting. Headings start new chunks, code fences stay atomic, fragments under 50 tokens merge forward, blocks over 1,000 tokens split on sentence boundaries. Each chunk inherits the nearest heading above it as section context.
 
-**Chunking is structural, not character-based.** Markdown-aware chunking — headings start new chunks, code fences stay atomic, fragments under 50 tokens merge forward — beat naive 1000-character chunking on every test corpus I tried. The cost is a slightly more complex chunker; the benefit is search results that point at a _section_, not at a window that happens to span two sections.
+**Store** — SQLite with WAL, FTS5 triggers for incremental indexing, sqlite-vec for optional vector ANN. Schema is at v15; migrations are append-only. Single file at `~/.lumen/`.
 
-**Compile is per-source, not corpus-wide.** Each source gets its own LLM pass that extracts concepts and edges. Cross-source connections happen as a side effect — when two sources mention the same concept with the same slug. This is the simplest possible scheme and it works, but it creates a different problem: the graph fragments. If "react-hooks" appears in five sources with five subtly different slugs, you get five disconnected subgraphs. The fix is the alias merge gate (more on that below), which runs on write.
+**Search** — three signals fused. BM25 (Porter-stemmed) via SQLite's built-in `bm25()`, TF-IDF (cosine) over an in-memory inverted index, and a graph walk that injects chunks anchored to 1–2-hop neighborhood concepts of the top hits. Combined via Reciprocal Rank Fusion (`score = Σ w / (k + rank)`, k=60). The output passes through a relevance-density budget cut — short, high-value chunks beat long, low-value ones.
 
-**Hybrid search beats any one signal.** BM25 has precision but no synonymy. TF-IDF has recall but not enough precision. Graph walk catches semantic neighbors that don't match query terms at all. Reciprocal Rank Fusion (k=60) combines all three with no calibration knob — just rank-based. Adding a fourth signal (vector embeddings) when it's been needed; not adding it when it hasn't.
+**Compile** — the one required LLM pass. Claude reads each unprocessed source and emits structured `{concepts[], edges[]}`. Each concept stores `compiled_truth` (the system's current best understanding) and a `timeline` of which sources contributed. Parallel execution (`-c N`), delta-aware (touches only unprocessed sources unless you pass `--all`), and prompt-cached (`cache_control: ephemeral`) for ~60–80% cost reduction on repeated calls within a session.
 
-## The auto-update loop
+---
 
-Here's the part I'm proudest of. When you wire Claude Code into a Lumen-equipped workspace (`lumen install claude`), every session goes through this loop:
+## How the brain auto-updates as you use it
+
+This is the part the "compounding" claim hinges on. The brain doesn't sit still after you ingest a source. It grows as the agent moves through sessions — and as it grows, it gets scored and consolidated.
+
+```
+   Claude Code session
+       │
+       │  user prompt
+       ▼
+   CLAUDE.md fires: "check brain before answering"
+       │
+       ▼
+   brain_ops(query)  via MCP
+       │
+       ├── concept lookup match?       ──►  compiled_truth + edges as context
+       ├── graph path match?           ──►  connecting chain as context
+       ├── neighborhood match?         ──►  related concept cluster as context
+       └── hybrid search fallback      ──►  top-ranked chunks as context
+       │
+       ▼
+   agent answers with brain context, cites [Source: title]
+       │
+       ▼
+   Stop hook fires: "if new knowledge appeared, call capture"
+       │
+       ▼
+   capture(type, title, content, related_slugs)
+       │
+       │  before DB write
+       ▼
+   PII gate — redacts emails, API keys, JWTs, Luhn-validated credit cards,
+              phone numbers, private IPv4, home paths
+       │
+       ▼
+   ┌────────────────────────────────────────────────────────────┐
+   │ alias merge gate (all three must hold):                    │
+   │    slug similarity        ≥ 0.7   (normalized Levenshtein) │
+   │    content Jaccard        ≥ 0.6   (over distinct ≥3-char   │
+   │                                    tokens)                 │
+   │    token count both sides ≥ 4     (thin-content guard)     │
+   └────────────────────────────────────────────────────────────┘
+       │
+       ├── all three pass     ──►  fold into existing canonical
+       │                            (alias row written; future
+       │                            lookups resolve through it)
+       └── any one fails      ──►  upsert as new concept + timeline entry
+       │
+       ▼
+   sync_journal append  (same transaction)
+       │
+       ▼
+   downstream: search index, tier scoring, sync daemon push
+       │
+       ▼
+   brain richer for next conversation
+```
+
+Every cycle adds knowledge. The agent enriches concepts after conversations. The next time the same topic comes up, `brain_ops` finds it. The difference compounds daily.
 
 ### The loop, step by step
 
@@ -132,21 +203,123 @@ Here's the part I'm proudest of. When you wire Claude Code into a Lumen-equipped
    one full lap takes ~6 seconds in Claude Code
 ```
 
-User prompts. Claude reads the brain _before_ answering (this is enforced by the `CLAUDE.md` file `lumen install` generates — "check the brain before the internet"). Claude answers using brain context, cites the source it leaned on. Stop hook fires after the response, nudges Claude to call `capture` if anything new appeared. Capture passes through the PII gate (regex scrubber for emails, API tokens, JWTs, Luhn-validated credit cards, phone numbers, private IPv4, home paths — all redacted with stable replacement tokens). The alias merge gate folds the capture into an existing canonical concept if the slug + content + token-count thresholds line up.
+The blue pulse circles the loop in about six seconds — that's roughly the time a real read-brain → answer → capture cycle takes in Claude Code. Every loop ends with `sync_journal` getting an append, and the daemon picks it up — without you typing anything, every other device receives the result of that loop.
 
-The blue pulse circles the loop in about six seconds — that's roughly the time a real read-brain → answer → capture cycle takes in Claude Code. Every loop ends with `sync_journal` getting an append. The sync daemon picks it up on its next tick.
+### Tiered enrichment
 
-The thing that took me weeks to get right wasn't the algorithms — it was the _protocol_. The CLAUDE.md file is what tells Claude to use the brain, when to cite, when to capture. The hooks are what make capture feel automatic instead of optional. The PII gate is what makes me actually trust the system with conversations that might contain API keys. The alias merge gate is what stops the graph from drowning in near-duplicates over time.
+Not every concept exists at the same resolution. Each concept starts at **Tier 3** — a stub with a basic summary. Its tier rises as more sources reference it.
 
-Each of those came after a specific failure. The CLAUDE.md was after I noticed Claude was using its training data to answer questions I'd already captured. The Stop hook was after I noticed capture wasn't happening. The PII gate was after I noticed an AWS key in my captured trajectory log. The alias merge gate was after I noticed 17 concepts for what was clearly one idea.
+```
+   Tier 3   ─────  mentioned once
+               ▲   stub + summary
+               │
+   Tier 2   ─────  mentioned 3+ times across 2+ sources
+               ▲   enriched with connections and context
+               │
+   Tier 1   ─────  mentioned 6+ times across 3+ sources
+                   full compiled_truth — the system's current
+                   best understanding, synthesized from
+                   everything you've read
+```
 
-## Cross-device, without leaking
+Run `lumen enrich` to process the upgrade queue, or `lumen enrich --status` to see current state. The tier ladder ensures the system spends LLM tokens only on concepts that have proved load-bearing across multiple sources, not on every passing mention.
 
-The other thing I underestimated: how badly I'd want this to sync across my devices.
+### Skill scoring and retirement
 
-I have a laptop and a desktop. For the first month of using Lumen, each had its own brain. Knowledge captured at the desktop didn't reach the laptop until I remembered to manually push. Half the time I didn't. The asymmetry was annoying enough that I stopped trusting either brain to be complete.
+```
+   concept                                 feedback events
+      │                                          │
+      │   +1 / -1 votes via brain_feedback ◄─────┘
+      ▼
+   score = Σ deltas
+      │
+      ├── score ≥ +N      ──►  ranks higher in brain_ops
+      └── score ≤ -3      ──►  retired_at = now
+                               retire_reason = most recent negative reason
+                               hidden from default search
+                               still queryable through history
+                               revivable via brain_ops
+```
 
-The sync layer that fixes this is encrypted-at-rest, encrypted-in-transit, and zero-knowledge with respect to the relay. The relay is a single-file Cloudflare Worker — about 150 lines of Hono code plus 30 lines of D1 SQL. You deploy it once in three `wrangler` commands, share the 32-byte master key across your devices (QR code on screen, recovery phrase, encrypted file — your call), and the daemon does the rest.
+The agent (or the user) flags concepts as wrong, stale, or contradicted while working. Bad knowledge disappears automatically. Good knowledge surfaces more often. The brain curates itself without manual intervention.
+
+### Trajectory capture + replay
+
+When the agent successfully completes a multi-step task — adding a new MCP tool, fixing a typecheck error, ingesting a new format — the literal sequence of `read` / `edit` / `bash` calls (and what each one returned) can be stored as a **trajectory** via `capture_trajectory`. A future agent doing a similar task calls `replay_skill(task)` and gets the recipe back as a hint. Drift caveats (codebase revision differences, missing file references, failure outcomes) come along too, so the agent knows what's changed since the recipe was captured.
+
+```
+   Session N           successful multi-step task
+                            │
+                            ▼
+                    capture_trajectory(steps, outcome, metadata)
+                            │
+                            ▼
+                    source row, source_type='trajectory'
+                    chunks indexed for FTS5
+
+   Session N+M         different agent, similar task
+                            │
+                            ▼
+                    replay_skill(task) ──► matched trajectory + drift caveats
+                            │
+                            ▼
+                    agent uses recipe instead of re-deriving
+```
+
+### Scope awareness everywhere
+
+Every source, concept, and trajectory carries a `(scope_kind, scope_key)` pair — one of `codebase`, `framework`, `language`, `personal`, or `team`. Search filters by scope by default, so work in repo A doesn't pollute results in repo B. Codebase identity collapses cleanly — SSH and HTTPS clones of the same repo produce the same scope key. When sync is on, the same scope routing applies on the wire too: only the scopes a device cares about ever materialize on that device.
+
+---
+
+## Cross-device sync — a brain on every laptop
+
+A local-first brain is great until you have two laptops. Lumen's sync layer is encrypted-at-rest, encrypted-in-transit, and zero-knowledge with respect to the relay.
+
+```
+   Device A                  Cloudflare Worker             Device B
+   ─────────                 (lumen-relay)                ─────────
+
+   write happens
+   (concept / trajectory / feedback / retire / truth_update)
+       │
+       ▼  same transaction
+   sync_journal append
+       │
+       │  Tier 6 daemon tick (adaptive 30s / 300s)
+       ▼
+   X25519 + XChaCha20-Poly1305 envelope
+       │
+       ▼
+   POST /relay/{user_hash}/journal ───────────►  D1 row stored
+                                                 opaque ciphertext only
+                                                 keyed by unlinkable hash
+                                                                  │
+                                                                  ▼  Device B's daemon polls
+                                                                  ▼
+                                                        GET /relay/{user_hash}/journal?since=cursor
+                                                                  │
+                                                                  ▼
+                                                        envelope decrypt (X25519 derived from Kx)
+                                                                  │
+                                                                  ▼
+                                                        op-specific apply handler
+                                                                  │
+                                                                  ▼
+                                                        Device B's lumen.db updated
+                                                        B's next session finds it
+```
+
+### What the relay sees
+
+```
+   user_hash    sync_id (UUIDv7)    envelope (ciphertext)    received_at
+   ───────────  ──────────────────  ─────────────────────    ──────────
+   abc1...      01h93...            opaque bytes              2026-05-19T..
+   abc1...      01h94...            opaque bytes              2026-05-19T..
+```
+
+That's all. No content. No scopes (just HMAC tags for filtering). No device identity beyond what the user's `Kx` derives. Two users with different master keys route to entirely different namespaces and can't read each other's blobs.
 
 ### A journal entry flowing from A → relay → B
 
@@ -171,43 +344,86 @@ The sync layer that fixes this is encrypted-at-rest, encrypted-in-transit, and z
      The only thing that ever touches the wire.
 ```
 
-The lock packets are the only thing that ever touches the wire. The relay sees a user-hash routing key (an unlinkable HMAC of the master key) and an opaque envelope sealed with XChaCha20-Poly1305. It can route the envelope to other devices on the same user hash. It cannot read the envelope. It cannot tell whether the envelope contains a captured trajectory, a feedback delta, or a truth update. Two users with different master keys can't see each other's envelopes — they route to entirely different namespaces.
+Only two encrypted packets ever touch the wire — the relay sees neither plaintext nor scope, only opaque sealed envelopes and a user-hash routing key.
 
-I had a moment, when this first worked end-to-end, of being surprised at how natural it felt. I captured something on my desktop, walked to the kitchen, opened my laptop, asked Claude about it, and it answered. The 60 seconds the daemon took to push and pull was completely invisible. The brain just _was_ there. That's the experience I was building toward; it took five Tier sub-projects to get there.
+### Honest LWW that doesn't pretend to be a CRDT
 
-## What I'd warn you about
+Two devices can edit the same concept's `compiled_truth` nearly simultaneously. We resolve with `updated_at` and append the losing side to a `concept_truth_history` table with the originating `device_id` attached.
 
-A few things I keep getting wrong, and you probably will too if you're building or using something like this:
+```
+   device A:  truth_update at T₁
+   device B:  truth_update at T₂   (T₂ > T₁)
 
-**Capture quality matters more than capture volume.** The first week I captured everything. Within days the brain was so noisy the high-signal stuff was buried. The fix is the same as good documentation: capture _less_, capture _better_, edit existing concepts rather than creating new ones.
-
-**Last-write-wins is the honest answer for free-form text.** I considered building real CRDT support for `compiled_truth`. I'd have spent a month and shipped something that occasionally produced subtly wrong merged text. LWW with an audit table (`concept_truth_history`) was a half-day of work and produces text that's wrong less often _and_ lets you trace exactly who wrote what when. The boring answer is sometimes the right one.
-
-**Scope routing is critical and easy to skip.** Without scopes, captures from my Lumen work leak into my client-project sessions and vice versa. The single biggest improvement to retrieval quality I made was making scope-filtering the default. Every source, concept, and trajectory carries a `(scope_kind, scope_key)` pair. Codebase identity collapses cleanly — SSH and HTTPS clones of the same repo produce the same scope key.
-
-**Install the daemon on every device the first day.** Manual `lumen sync push` has just enough friction to make you skip it half the time. The asymmetry between "device that pushes" and "device that doesn't" makes you stop trusting the brain on either. Install the daemon on every device the moment you do `lumen sync init` on the second one.
-
-## What's still ahead
-
-Things I haven't finished. In rough order of how much they bug me:
-
-- **MCP fire-and-forget push** (issue #30). Right now an agent capture lands in the local journal immediately, but it doesn't push to the relay until the next daemon tick (~30s). Wiring an MCP-side notification to the daemon would drop that to ~5s. Not hard; just hasn't happened.
-- **Daemon log follow subcommand** (issue #31). `lumen sync daemon logs --follow` so I don't have to `tail -f ~/.lumen/sync-daemon.log`. Trivial.
-- **Multi-user team scope.** Today the sync layer is built for one person across N devices. Sharing a team brain with a colleague needs a different routing tag scheme. The hooks are there in the protocol; the UX isn't.
-- **Shamir-secret-share key recovery.** If you lose all your devices, the relay's encrypted journal becomes permanently undecryptable. Splitting the master key across trustees with `lumen sync recover` is the obvious fix. It's not implemented.
-
-If you read this far, the punchline is that Lumen is a project I built because I was tired of the same conversation forty times. I think the substrate it ended up being is generalizable beyond me — but it's still early, and most of the interesting work is in the lessons learned, not the algorithms. The algorithms are mostly textbook BM25, RRF, label propagation, XChaCha20-Poly1305. The interesting work was figuring out which protocol surface made agents and humans both want to use this.
-
-If you want to try it:
-
-```bash
-npm install -g lumen-kb
-lumen init
-lumen install claude          # in any repo where you want Claude to be smarter
+   apply on both devices:
+      incoming.updated_at > existing.updated_at ?
+            │                       │
+            ▼                       ▼
+        winner wins             loser kept
+   UPDATE concepts SET     INSERT concept_truth_history
+      truth = winner          (slug, truth, updated_at, device_id)
+                                       │
+                                       ▼
+                              audit rows queryable later
+                              for manual reconciliation
 ```
 
-And the brain starts compounding from the first capture.
+The reason we picked this over pretending free-form text is CRDT-mergeable: debuggability matters more than appearing magical. When the truth looks wrong, you can trace exactly who wrote what when.
+
+### The Tier 6 daemon
+
+Manual `lumen sync push` is great until the moment you stop typing it. The Tier 6 daemon turns the manual loop into an autonomous one.
+
+```
+   lumen sync daemon install
+       │
+       ▼
+   launchd plist (macOS)  /  systemd --user unit (Linux)
+       │
+       ▼
+   long-lived tick loop:
+      probe latest_sync_id watermark
+      cadence decision:  Active 30s   if journal pressure or recent pull rows
+                         Idle 300s    after N empty ticks with nothing pushed
+      push decision:     batch push after 5s of quiet
+      pull always runs
+      apply pulled entries
+      sleep until next tick
+```
+
+After installation, you never type a sync command again. Capture knowledge on laptop A, it arrives on laptop B in 30 seconds. Give feedback on a concept on B, the score reflects across all devices 30 seconds later. The substrate becomes invisible.
 
 ---
 
-_Built on [`lumen-kb`](https://www.npmjs.com/package/lumen-kb). MIT licensed. Source: [Sardor-M/Lumen](https://github.com/Sardor-M/Lumen). For a practical "how to set this up" tutorial, see Learn → Sync inside the web dashboard. For the rigorous test-plan version, see `docs/test-plans/multi-device-agent-memory.md`._
+## What sets Lumen apart
+
+Most "AI memory" or "RAG" tools you can install today sit in a vendor's cloud, ingest your material into the vendor's index, and return search results through an API. The convenience is obvious, but the privacy story is stark. Your reading list might be one of the most sensitive data sets you own — it reveals what you're learning, what you're confused about, what you're building. That data should sit on your machine.
+
+A few specific things Lumen does differently.
+
+**Local-first by default.** SQLite on your laptop. The CLI, web dashboard, and MCP server all read from the same file. No data leaves your machine unless you opt into sync. The sync layer is end-to-end encrypted, and the relay is a single-file Cloudflare Worker you can self-host with three `wrangler` commands.
+
+**No vector database.** Lumen deliberately does _not_ lead with dense embeddings. The BM25 + TF-IDF + graph-walk combination covers lexical, weighted, and semantic-structural search without the operational overhead of an embedding server, index rebuilds, or model versioning. Semantic similarity is encoded in the compile graph — through edges the LLM extracted during `compile` — and exposed via graph walk at query time. Vector embeddings remain available as a third lane if you want them, but they're never required.
+
+**Agent-native, not retrofit.** The MCP server, trajectory capture, scope dimension, tier-scored enrichment, PII gate — these are not post-hoc additions. They're why the project exists in its current shape. If you're using a coding agent, Lumen is less "another knowledge tool to manage" and more "the memory the agent should have had from the start."
+
+**Honest conflict resolution.** Last-write-wins with a history table isn't glamorous, but it's correct and debuggable. We don't pretend `compiled_truth` is magically a CRDT.
+
+**Deterministic up to the synthesis step.** Every stage — ingest, chunk, dedupe, search, graph walk, alias merge, scoring, sync — is deterministic given the same inputs. The non-deterministic steps are the LLM `compile` and `ask` passes, both of which log the full request/response to `audit.log` for reproducibility.
+
+---
+
+## What's next
+
+The biggest open work right now is autonomy and multi-device parity.
+
+- **Tier 6 daemon** shipped this month. Once installed, sync is fully background.
+- **MCP fire-and-forget push** (issue #30) turns agent-driven journal writes into instant sync events, dropping cross-device propagation lag from ~60s to ~5s.
+- **`lumen sync daemon logs --follow`** (issue #31) makes the daemon observable from the CLI without grepping log files.
+
+Past that, the roadmap covers a smart-broker tier with opt-in server-side enrichment for users who want it, key recovery flows using Shamir's secret sharing, and a richer query interface for the web UI.
+
+The goal hasn't changed since the first commit: a local-first knowledge compiler that gets better at your work without leaking what that work is. A system that gives agents a persistent brain compounding past the session boundary. And a tool that never asks you to type a sync command.
+
+---
+
+_Built on [`lumen-kb`](https://www.npmjs.com/package/lumen-kb). MIT licensed. Source at [Sardor-M/Lumen](https://github.com/Sardor-M/Lumen)._
