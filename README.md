@@ -109,6 +109,8 @@ Claude reads the relevant chunks from your corpus and streams the answer token b
 
 ## Install
 
+Install the CLI globally so the `lumen` binary lands on your PATH:
+
 ```bash
 npm install -g lumen-kb
 ```
@@ -121,10 +123,15 @@ cd lumen && pnpm install && pnpm build
 cd apps/cli && npm link
 ```
 
+Initialize your workspace — this creates `~/.lumen/` and the SQLite brain at `~/.lumen/lumen.db`:
+
+```bash
+lumen init
+```
+
 Set your API key once:
 
 ```bash
-mkdir -p ~/.lumen
 echo 'ANTHROPIC_API_KEY=sk-ant-...' > ~/.lumen/.env
 ```
 
@@ -140,13 +147,14 @@ Lumen always reads `~/.lumen/.env` for API keys, regardless of which workspace y
 lumen install claude
 ```
 
-This generates five files:
+This generates six files:
 
 - **`CLAUDE.md`** — brain-first protocol (mandatory, loaded every message). Tells Claude: check the knowledge base before answering, cite sources as `[Source: title]`, only use web search after the brain returns nothing.
 - **`.mcp.json`** — MCP server config with `LUMEN_DIR` baked in so the server always connects to the right workspace.
 - **`.claude/skills/lumen/skill.md`** — supplementary skill with tool routing table, capture protocol, and session summary instructions.
 - **`.claude/hooks/lumen-pretool.sh`** — PreToolUse hook. Fires before every `Glob` / `Grep` and reminds Claude that MCP search tools exist.
-- **`.claude/hooks/lumen-signal.sh`** — Stop hook. Fires after every response and nudges Claude to call `capture` if new knowledge appeared.
+- **`.claude/hooks/lumen-signal.sh`** — Stop hook. Fires after every response and nudges Claude to call `capture` if new knowledge appeared. Also runs `lumen sync run` when sync is enabled, so captures push to the relay before the next turn.
+- **`.claude/settings.json`** — wires both hook scripts into Claude Code's hook system so they actually fire on tool-use events.
 
 After installing, every conversation draws from and adds to your knowledge base automatically.
 
