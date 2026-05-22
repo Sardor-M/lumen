@@ -1,16 +1,163 @@
+<div align="center">
+
 # Lumen
 
-[![npm](https://img.shields.io/npm/v/lumen-kb)](https://www.npmjs.com/package/lumen-kb)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
+### A persistent brain for Claude Code, Cursor, Codex, and any MCP-compatible agent
+
+**One SQLite file · local-first · 23 MCP tools · E2E-encrypted cross-device sync**
+
+[![npm version](https://img.shields.io/npm/v/lumen-kb.svg)](https://www.npmjs.com/package/lumen-kb)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE.md)
 [![GitHub](https://img.shields.io/github/stars/Sardor-M/Lumen?style=social)](https://github.com/Sardor-M/Lumen)
 
-AI agents start every conversation with amnesia. Claude Code, Cursor, Codex, your Mastra or LangChain harness — they all know the world but nothing about _your_ world: the 200 papers you've read, the codebase you ship, the architecture decisions you made last quarter, the trajectory that finally worked when you debugged that thing at 2am. Every session relearns the same context, repeats the same mistakes, forgets your corrections an hour later, and burns your token budget re-explaining the same domain.
+[![macOS](https://img.shields.io/badge/macOS-supported-blue.svg)](#)
+[![Linux](https://img.shields.io/badge/Linux-supported-blue.svg)](#)
+[![Windows](https://img.shields.io/badge/Windows-supported-blue.svg)](#)
 
-Lumen is the substrate that fixes that — a local-first knowledge compiler that gives your agent a persistent brain. Drop everything you've read, shipped, or captured into it (articles, papers, YouTube talks, whole code repositories, datasets, screenshots of dashboards, Obsidian clippings) and it builds a SQLite-backed knowledge graph the agent can search before it answers. Successful multi-step tool sequences are saved as replayable trajectories so the agent doesn't relearn the same task next week. Concepts accumulate `+1`/`-1` feedback, near-duplicates merge into canonicals on write, and the whole graph is scope-aware so work in repo A doesn't pollute results in repo B.
+[![Claude Code](https://img.shields.io/badge/Claude_Code-MCP-blueviolet.svg)](#)
+[![Cursor](https://img.shields.io/badge/Cursor-MCP-blueviolet.svg)](#)
+[![Codex CLI](https://img.shields.io/badge/Codex_CLI-MCP-blueviolet.svg)](#)
+[![OpenAI SDK](https://img.shields.io/badge/OpenAI_SDK-adapter-blueviolet.svg)](#)
+[![AI SDK](https://img.shields.io/badge/AI_SDK-adapter-blueviolet.svg)](#)
+[![LangChain](https://img.shields.io/badge/LangChain-adapter-blueviolet.svg)](#)
+[![Mastra](https://img.shields.io/badge/Mastra-adapter-blueviolet.svg)](#)
 
-`lumen install claude` wires this directly into Claude Code with a brain-first `CLAUDE.md` protocol: check the brain before the internet, cite sources, capture new ideas after every response. The same MCP server (23 tools) plugs into Cursor, Codex, or any MCP client. Native adapters under `lumen-kb/{openai,ai-sdk,langchain,mastra}` cover everything else. Every conversation draws from and adds to the brain automatically — the difference compounds daily.
+</div>
 
-Everything runs on your machine. One SQLite file. No cloud, no server. The LLM is only called when you ask it to compile or synthesize — search, indexing, graph traversal, deduplication, scope routing, and PII scrubbing all run locally. Opt-in end-to-end-encrypted sync across your devices is wired in: every concept-touching mutation lands in an append-only journal, sealed with X25519 + XChaCha20-Poly1305 before it leaves the box, and pushes to a self-hostable Cloudflare Worker relay (`apps/relay/`, deployable in three `wrangler` commands) that holds opaque ciphertext only — the relay never sees the key.
+## Get Started
+
+```bash
+# Zero-install — runs straight from npm
+npx lumen-kb init
+
+# Or install globally for the `lumen` command on your PATH
+npm i -g lumen-kb
+```
+
+```bash
+cd your-project
+lumen init                          # creates ~/.lumen/lumen.db
+lumen add https://aeon.co/...       # ingest a source
+lumen compile                       # extract concepts + edges
+lumen install claude                # wire into Claude Code
+```
+
+<sub>Lumen runs on Node 22+. The `lumen` binary, the web UI, the MCP server, and the file-watcher daemon all live in the same npm package. No native binaries to fetch, no external services to spin up — the LLM is only called when you ask it to compile or synthesize.</sub>
+
+---
+
+## Why Lumen?
+
+AI agents start every conversation with amnesia. Claude Code, Cursor, Codex — they know the world but **nothing about _your_ world**: the two hundred papers you've read, the codebase you ship, the architecture decisions you made last quarter, the trajectory that finally worked when you debugged that thing at 2am.
+
+Every session relearns the same context, repeats the same mistakes, forgets your corrections an hour later, and burns your token budget re-explaining the same domain.
+
+**Lumen gives your agent a persistent brain** — a SQLite-backed knowledge graph it queries _before_ answering, and writes to _after_. Concepts accumulate. Trajectories replay. The brain is richer at the start of every conversation than it was at the end of the last one.
+
+### What you actually get
+
+- A **knowledge graph** of every article, paper, repo, dataset, transcript, and screenshot you've fed it — extracted as named concepts and weighted edges by an LLM you control.
+- **23 MCP tools** that let the agent do concept lookup, neighborhood walks, PageRank-ranked retrieval, hybrid search (BM25 + TF-IDF + vector with RRF fusion), and trajectory replay.
+- **A `CLAUDE.md` protocol** wired by `lumen install claude` so the agent checks the brain _before_ the internet, cites sources, and captures new ideas after every response.
+- **Self-measured telemetry**: every tool call writes a row to `query_log`. The dashboard's `/agent-activity` page reports skill-hit rate, tokens saved versus an exploration baseline, and a USD savings estimate — all from your own usage, no benchmarks needed.
+
+### Benchmark Results
+
+Lumen ships a reproducible engine-level benchmark suite — `benchmarks/runner/all.ts` — that runs in-process against a fresh temp SQLite database. **No LLM calls, no network, no API keys.** Numbers below come from a real run committed to the repo at `docs/benchmarks/2026-04-21-lumenbench.md` (6 categories, all pass, 5.1s total wall time, Node 23 / WAL mode).
+
+> **Headline: sub-millisecond search at 1K chunks · ~6ms RRF at 10K · 100% top-1 hit rate on the curated query set · 12/12 graph-op correctness checks pass.**
+
+| Category                                   | Result                                                         | Why it matters                                               |
+| ------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------ |
+| **Search latency** (1K chunks, RRF fused)  | **p50 0.56 ms · p95 0.70 ms**                                  | Hybrid search disappears into the agent's loop               |
+| **Search latency** (10K chunks, RRF fused) | **p50 6.22 ms · p95 7.53 ms**                                  | Stays sub-10ms p95 at 10× scale                              |
+| **Search quality** (RRF)                   | **P@1 100% · MRR 1.000 · nDCG@5 0.908**                        | RRF fused beats raw BM25 by ~3× on top-1 hit                 |
+| **Ingest throughput** (markdown)           | **26,689 docs/sec · 33.1 MB/sec**                              | Real-world docs land in under a millisecond each             |
+| **Per-doc latency** (markdown)             | **p50 0.031 ms · p95 0.045 ms**                                | The chunker isn't the bottleneck. Ever.                      |
+| **Graph operations**                       | **12 / 12 correctness checks pass**                            | shortest-path, neighborhood, PageRank, godNodes, communities |
+| **MCP contract**                           | **10 / 10 tools pass valid/invalid input contract**            | The public tool surface refuses bad input cleanly            |
+| **Adversarial robustness**                 | **PASS** (unicode, huge inputs, FTS5 operators, SQL injection) | The boundary holds                                           |
+
+<details>
+<summary><strong>Full benchmark details</strong></summary>
+
+**Methodology.** Every category runs in-process via `tsx benchmarks/runner/<category>.ts` against a fresh temp SQLite file in WAL mode. No LLM, no network. Each run captures git branch + commit + Node version into the report so diffs stay reproducible. The all-in-one runner is `npx tsx benchmarks/runner/all.ts` and writes a dated report under `docs/benchmarks/`.
+
+**Search quality — curated 22-doc corpus, 15 graded queries (full table):**
+
+| Mode          | P@1    | P@5   | MRR   | nDCG@5 | mean ms |
+| ------------- | ------ | ----- | ----- | ------ | ------- |
+| `bm25`        | 33.3%  | 9.3%  | 0.333 | 0.206  | 0.05    |
+| `tfidf`       | 100.0% | 40.0% | 1.000 | 0.949  | 0.17    |
+| `rrf` (fused) | 100.0% | 40.0% | 1.000 | 0.908  | 0.01    |
+
+BM25 alone misses two-thirds of top-1 because the query language doesn't match exact tokens (e.g. "PageRank damping factor" vs. the chunk's "alpha · M + (1-alpha)/N"). TF-IDF normalizes IDF aggressively and nails it. RRF gives you TF-IDF-grade ranking _and_ BM25's term-precision properties in one merged list — at a _cheaper_ mean latency than either alone, because the fusion pass amortizes shared work.
+
+**Search latency — three scales × three modes, 200 queries per run after 20 warmup:**
+
+| Scale | Mode  | p50 ms | p95 ms | p99 ms | mean ms | QPS    |
+| ----- | ----- | ------ | ------ | ------ | ------- | ------ |
+| 100   | bm25  | 0.09   | 0.13   | 0.21   | 0.10    | 10,469 |
+| 100   | tfidf | 0.02   | 0.04   | 0.06   | 0.02    | 46,551 |
+| 100   | rrf   | 0.12   | 0.19   | 0.31   | 0.12    | 8,095  |
+| 1K    | bm25  | 0.37   | 0.46   | 0.78   | 0.38    | 2,657  |
+| 1K    | tfidf | 0.17   | 0.24   | 0.44   | 0.18    | 5,542  |
+| 1K    | rrf   | 0.56   | 0.70   | 0.97   | 0.56    | 1,777  |
+| 10K   | bm25  | 3.13   | 3.74   | 6.69   | 3.23    | 310    |
+| 10K   | tfidf | 3.05   | 4.22   | 6.42   | 3.11    | 322    |
+| 10K   | rrf   | 6.22   | 7.53   | 12.82  | 6.35    | 158    |
+
+Latency scales roughly linearly with corpus size (10× chunks → ~10× p50). RRF is consistently ~2× slower than either lane alone because it runs both _then_ fuses — that's the cost of getting the best ranking quality of either signal.
+
+**Ingest throughput — 462 samples across markdown / HTML / plaintext (150 each):**
+
+| Format   | Docs | Chunks | Docs/sec | MB/sec | p50 ms/doc | p95 ms/doc |
+| -------- | ---- | ------ | -------- | ------ | ---------- | ---------- |
+| markdown | 150  | 1,400  | 26,689   | 33.13  | 0.031      | 0.045      |
+| html     | 150  | 981    | 22,284   | 31.51  | 0.037      | 0.048      |
+| plain    | 150  | 681    | 40,092   | 49.00  | 0.019      | 0.029      |
+
+Format auto-detection: **30/30 samples classified correctly**.
+
+**Graph operations — 22 concepts, 35 edges, 12 correctness checks:** all 3 `shortestPath` runs return the correct hop sequence, both `neighborhood(d=1)` queries hit the right count, `pagerank` top-3 returns the expected hub triplet, `godNodes` top-3 returns the highest-degree concepts, `detectCommunities` converges in 4/3/3 iterations on three seeds. Average run-time per op is sub-millisecond except PageRank (1.14 ms) and community detection (1.51 ms).
+
+**MCP contract — 10 tools in the public registry** (the `lumen-kb/tools` export) each accept the documented schema and reject malformed input with a typed error. The broader 23-tool MCP server surface is exercised end-to-end by the web app and `lumen install claude` integration test.
+
+**Adversarial robustness** — full unicode coverage (CJK, emoji, RTL marks), 1 MB single-chunk inputs, FTS5 operator strings (`NEAR/3 "foo bar"`), SQL injection payloads (`'; DROP TABLE chunks; --`), and pathological slugs (empty, all-whitespace, control chars). Every input either returns sane results or rejects with a structured error. **No crashes, no SQLI escapes.**
+
+**Reproducing locally:**
+
+```bash
+pnpm install
+npx tsx benchmarks/runner/all.ts
+# Report appears at docs/benchmarks/YYYY-MM-DD-lumenbench.md
+```
+
+To run a single category:
+
+```bash
+npx tsx benchmarks/runner/search-latency.ts
+npx tsx benchmarks/runner/search-quality.ts
+npx tsx benchmarks/runner/ingest.ts
+npx tsx benchmarks/runner/graph-ops.ts
+npx tsx benchmarks/runner/mcp-contract.ts
+npx tsx benchmarks/runner/adversarial.ts
+```
+
+</details>
+
+### Agent-side cost telemetry (live)
+
+The engine benchmarks above answer _"how fast is Lumen?"_ The web UI at `/agent-activity` answers _"how much is Lumen actually saving the agent that's using it?"_ — computed from `query_log` rows your own MCP clients have written:
+
+| Metric                                                            | Where it's shown                    |
+| ----------------------------------------------------------------- | ----------------------------------- |
+| **Skill hit rate** (% of sessions that landed on a known concept) | `/agent-activity` · `lumen profile` |
+| **Tokens saved** vs. exploration baseline                         | `/agent-activity` · `lumen profile` |
+| **≈ USD avoided** (tokens × conservative blended rate)            | `/agent-activity`                   |
+| **Recent calls + hot topics + tool distribution**                 | `/agent-activity`                   |
+
+Formula and rate are documented in `apps/cli/src/store/query-log.ts:explorationCostAvoided`.
 
 ---
 
@@ -61,6 +208,86 @@ Everything runs on your machine. One SQLite file. No cloud, no server. The LLM i
 
 ---
 
+## Key Features
+
+|                             |                                                                                                                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Persistent agent memory** | A SQLite knowledge graph (concepts + typed edges + trajectories) the agent queries before answering and writes to after. Concepts accumulate, near-duplicates merge into canonicals on write. |
+| **9 source types**          | URLs, PDFs, YouTube transcripts, arXiv papers, files, folders, whole code repos, datasets (CSV/JSON), images, plus Obsidian vaults. All chunked, deduped via SHA-256, never leaves your disk. |
+| **Hybrid search**           | BM25 (FTS5) + TF-IDF + optional vector ANN (`sqlite-vec`), merged with reciprocal rank fusion. Three signals, one ranked list.                                                                |
+| **Scope-aware**             | Codebase A's results don't pollute repo B's. Every concept, source, and feedback row carries `scope_kind` + `scope_key`; the agent picks the right scope per query.                           |
+| **Tiered enrichment**       | Stub concepts auto-escalate to full enrichment when they cross usage thresholds — `lumen enrich` runs only on what matters.                                                                   |
+| **Trajectory replay**       | Successful multi-step tool sequences are captured and replayed when the agent hits a similar task — no relearning.                                                                            |
+| **PII gate**                | Tokens, emails, JWTs, secret-looking paths are scrubbed _before_ anything is written to the journal, by default.                                                                              |
+| **E2E-encrypted sync**      | X25519 + XChaCha20-Poly1305 envelopes. Push to a self-hostable Cloudflare Worker relay (`apps/relay/`, three `wrangler` commands). The relay sees opaque ciphertext only.                     |
+| **100% local**              | No data leaves the box unless you opt into compile/enrich/ask (your API key) or sync (your relay). Search, graph traversal, dedup, scope routing, PII scrub, web UI — all local.              |
+
+---
+
+## Quick Start
+
+### 1. Initialize a workspace
+
+```bash
+lumen init
+```
+
+Creates `~/.lumen/lumen.db` with the v16 schema (sources, chunks, concepts, edges, aliases, scopes, feedback, trajectories, sync journal, vector store).
+
+### 2. Add some sources
+
+```bash
+lumen add https://aeon.co/essays/the-bitter-lesson
+lumen add ./papers/attention-is-all-you-need.pdf
+lumen add https://www.youtube.com/watch?v=...
+lumen add ~/projects/my-app           # whole code repo
+lumen add ~/Documents/Obsidian/Notes  # vault
+```
+
+The CLI dispatches on the input shape — URL, PDF, YouTube, arXiv, file, folder, code repo, dataset, image. SHA-256 dedup means re-adding the same source is a no-op.
+
+### 3. Compile
+
+```bash
+lumen compile -c 5     # 5 sources in parallel
+```
+
+An LLM (Anthropic / OpenRouter / Ollama — you choose) reads across chunks and proposes concepts + weighted edges. Tiered enrichment, near-duplicate merge on write, trajectory capture from sessions.
+
+### 4. Wire it into your agent
+
+```bash
+lumen install claude
+```
+
+Writes a brain-first `CLAUDE.md` protocol, registers the MCP server in `.mcp.json`, wires a pre-tool hook and a stop hook that captures new knowledge after every response. The same MCP server plugs into Cursor and Codex CLI via their MCP configs.
+
+For agents that don't speak MCP, use the native adapters:
+
+```ts
+import { tools as lumenTools } from 'lumen-kb/openai'; // OpenAI SDK
+import { tools as lumenTools } from 'lumen-kb/ai-sdk'; // Vercel AI SDK
+import { tools as lumenTools } from 'lumen-kb/langchain'; // LangChain
+import { tools as lumenTools } from 'lumen-kb/mastra'; // Mastra
+```
+
+### 5. Open the web UI
+
+```bash
+lumen serve
+```
+
+Then visit `http://localhost:3000`:
+
+- `/` — overview, knowledge-graph preview, stats
+- `/sources` and `/sources/[id]` — every ingested source with its derived concepts
+- `/concepts` and `/concepts/[slug]` — every concept with "Seen in N sources" attribution, feedback history, compiled truth, backlinks, recent mentions timeline
+- `/graph` — the force-directed memory graph, drag any node, click to open
+- `/agent-activity` — what the MCP agents have been doing, tokens saved, hot topics
+- `/learn` — algorithms, graph density, memory, and sync explained
+
+---
+
 ## What it looks like in practice
 
 ```bash
@@ -97,6 +324,8 @@ lumen search "agent orchestration patterns" -b 4000
    signals: tfidf:68%
 ```
 
+The bracketed score is the fused RRF rank, and the `signals:` line shows which lane (BM25 / TF-IDF / vector) contributed how much to the merge — a real "look inside the engine" the agent can use to decide whether to widen the search.
+
 Or ask a question and get a streamed answer:
 
 ```bash
@@ -107,226 +336,85 @@ Claude reads the relevant chunks from your corpus and streams the answer token b
 
 ---
 
-## Install
+## How It Works
 
-Install the CLI globally so the `lumen` binary lands on your PATH:
-
-```bash
-npm install -g lumen-kb
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Claude Code / Cursor / Codex                       │
+│                                                                       │
+│  "How does our auth middleware handle JWT refresh?"                   │
+│                       │                                               │
+│                       ▼                                               │
+└───────────────────────┼───────────────────────────────────────────────┘
+                        │ MCP stdio · json-rpc
+                        ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                       Lumen MCP server (23 tools)                     │
+│                                                                       │
+│  brain_ops("jwt refresh")  ──┐                                        │
+│                              │  intent-routed                         │
+│  search · query              │  ↓                                     │
+│  concept · neighbors · path  │  Skill hit? → trajectory replay        │
+│  god_nodes · pagerank        │  Miss?      → hybrid retrieval         │
+│  capture · capture_trajectory│                                        │
+│  brain_feedback · retire     │  Returns: chunks + budget hint         │
+│                              ▼                                        │
+│                ┌─────────────────────────────┐                        │
+│                │     ~/.lumen/lumen.db       │                        │
+│                │   • sources · chunks        │                        │
+│                │   • concepts · edges        │                        │
+│                │   • aliases · scopes        │                        │
+│                │   • trajectories            │                        │
+│                │   • feedback · query_log    │                        │
+│                │   • vec_chunks (sqlite-vec) │                        │
+│                │   • sync journal            │                        │
+│                └─────────────────────────────┘                        │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-Or from source:
+1. **Ingest** — `lumen add` dispatches by input shape (URL → fetch + readability; PDF → text extract; YouTube → transcript; arXiv → abstract + sections; folder → walk; code → parse + symbol extract). All output lands in `chunks` with SHA-256 dedup, then optionally embedded for vector search.
 
-```bash
-git clone https://github.com/Sardor-M/Lumen.git
-cd lumen && pnpm install && pnpm build
-cd apps/cli && npm link
-```
+2. **Store** — one SQLite file. FTS5 for keyword search, `sqlite-vec` for ANN, plain relational tables for everything else. Scope-aware on write so multi-repo work doesn't bleed.
 
-Initialize your workspace — this creates `~/.lumen/` and the SQLite brain at `~/.lumen/lumen.db`:
+3. **Compile** — an LLM reads across your chunks and proposes named concepts + weighted typed edges (`implements`, `extends`, `contradicts`, `references`, `derives`, …). Tier-based enrichment escalates stubs to full concept pages only when usage warrants it. Near-duplicate slugs merge into a canonical via `concept_aliases`.
 
-```bash
-lumen init
-```
+4. **Serve** — `lumen serve --mcp` is the MCP server; `lumen serve` is the Next.js web UI. The agent talks to the MCP via stdio/JSON-RPC. Every tool call writes a `query_log` row with `tokens_spent`, `skill_hit`, `latency_ms`, and `session_id`.
 
-Set your API key once:
-
-```bash
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > ~/.lumen/.env
-```
-
-Lumen always reads `~/.lumen/.env` for API keys, regardless of which workspace you're using. Supports Anthropic (Claude), OpenRouter (multi-model), and Ollama (local). Default model: `claude-sonnet-4-6`.
+5. **Sync (opt-in)** — every concept-touching mutation lands in an append-only `sync_journal`. On push, each entry is sealed with X25519 + XChaCha20-Poly1305 and shipped to the relay. The relay never sees the key.
 
 ---
 
-## Wire it into your AI assistant
-
-### Claude Code
+## CLI Reference
 
 ```bash
-lumen install claude
+lumen init                    # create ~/.lumen/lumen.db
+lumen add <inputs...>         # ingest URLs, PDFs, YouTube, arXiv, files, folders, code, datasets, images
+lumen search <query>          # hybrid search (BM25 + TF-IDF + vector with RRF)
+lumen ask <question>          # search locally, send top chunks to the LLM, get a synthesized answer
+lumen compile [-c N]          # extract concepts + edges via LLM (N sources in parallel)
+lumen embed                   # generate vector embeddings (enables semantic search)
+lumen enrich                  # enrich concepts that crossed tier thresholds
+lumen graph                   # explore the knowledge graph locally (no LLM)
+lumen status                  # sources · chunks · concepts · graph density
+lumen profile                 # learned preferences, top concepts, recent activity
+lumen review                  # inspect logged sessions, capture trajectories
+lumen serve [--mcp]           # web UI on :3000 (--mcp = stdio MCP server)
+lumen watch                   # manage connectors that auto-ingest from external sources
+lumen daemon                  # background scheduler for connectors
+lumen sync [push|pull]        # cross-device sync (opt-in, end-to-end encrypted)
+lumen install <platform>      # wire integration: claude · codex · daemon
+lumen memory [export|import]  # dump or restore your brain
 ```
 
-This generates six files:
-
-- **`CLAUDE.md`** — brain-first protocol (mandatory, loaded every message). Tells Claude: check the knowledge base before answering, cite sources as `[Source: title]`, only use web search after the brain returns nothing.
-- **`.mcp.json`** — MCP server config with `LUMEN_DIR` baked in so the server always connects to the right workspace.
-- **`.claude/skills/lumen/skill.md`** — supplementary skill with tool routing table, capture protocol, and session summary instructions.
-- **`.claude/hooks/lumen-pretool.sh`** — PreToolUse hook. Fires before every `Glob` / `Grep` and reminds Claude that MCP search tools exist.
-- **`.claude/hooks/lumen-signal.sh`** — Stop hook. Fires after every response and nudges Claude to call `capture` if new knowledge appeared. Also runs `lumen sync run` when sync is enabled, so captures push to the relay before the next turn.
-- **`.claude/settings.json`** — wires both hook scripts into Claude Code's hook system so they actually fire on tool-use events.
-
-After installing, every conversation draws from and adds to your knowledge base automatically.
-
-### MCP server (Cursor, Codex, any MCP client)
-
-```bash
-lumen --mcp          # stdio server, 23 tools
-```
-
-Add to your client's MCP config:
-
-```json
-{
-    "mcpServers": {
-        "lumen": { "command": "lumen", "args": ["--mcp"] }
-    }
-}
-```
-
-### Cursor / Aider / Copilot (no MCP)
-
-Add this to your instruction file (`.cursorrules`, `CLAUDE.md`, etc.):
-
-```
-Before answering research questions, run:
-  ! lumen search "<question>" -b 8000
-Use the returned chunks as primary context.
-```
+Pipe-friendly, JSON-when-asked (`--json`), exits with sane status codes. Plays nicely with `jq`, `fzf`, and your shell of choice.
 
 ---
 
-## The agent loop
+## MCP Tools (23)
 
-```
-User sends a message
-        |
-        v
-CLAUDE.md fires: "check brain BEFORE answering"
-        |
-        v
-Agent calls brain_ops(query) via MCP
-        |
-        +-- concept found  --> compiled truth + edges as context
-        +-- path found     --> concept connection chain as context
-        +-- neighborhood   --> related cluster as context
-        +-- search results --> top ranked chunks as context
-        |
-        v
-Agent answers using KB context, cites [Source: title]
-        |
-        v
-Stop hook fires: "call capture if new knowledge appeared"
-        |
-        v
-Agent calls capture(type, title, content, related_slugs)  (PII-scrubbed before write)
-        |
-        v
-Concept upserted + timeline entry + backlinks  OR  folded into existing canonical via alias
-        |
-        v
-Brain is richer for the next conversation
-```
-
-Every cycle adds knowledge. The agent enriches concepts after conversations. Next time the same topic comes up, `brain_ops` finds it. The difference compounds daily.
-
----
-
-## How the brain compounds over time
-
-### Tiered enrichment
-
-Every concept starts at Tier 3 — a stub. As you add more sources that reference it, the tier climbs:
-
-- **Tier 3** — mentioned once. Stub with basic summary.
-- **Tier 2** — mentioned 3+ times across 2+ sources. Enriched with connections and context.
-- **Tier 1** — mentioned 6+ times across 3+ sources. Full compiled truth — the system's current best understanding of this concept, synthesized from everything you've read.
-
-Run `lumen enrich` to process the queue, or `lumen enrich --status` to see where things stand.
-
-### Skill scoring + retirement
-
-Concepts also accumulate `+1` / `-1` feedback votes (via the `brain_feedback` MCP tool). When the cumulative score crosses `-3`, the concept is auto-retired — soft-deleted, hidden from `brain_ops` search, but still queryable for history. The most recent negative reason becomes the retire reason. Explicit retirement via `retire_skill(slug, reason)` works the same way.
-
-### Merge near-duplicates on write
-
-If you capture `add-route` today and `add-routes` next week with similar content, Lumen folds them into one canonical concept on write. The incoming slug is recorded as an **alias** in the `concept_aliases` table; future lookups for either slug resolve to the canonical row. `brain_ops` returns one consolidated skill instead of N near-duplicates, and feedback votes accumulate on the canonical instead of splitting across siblings.
-
-The merge gate requires **all three**: slug similarity ≥ 0.7 (Levenshtein-normalized), content Jaccard ≥ 0.6 across distinct ≥3-char tokens, and ≥ 4 distinct tokens on both sides (the thin-content guard keeps placeholders from accidentally merging).
-
-### Trajectory capture + replay
-
-When the agent successfully completes a multi-step task — adding a new MCP tool, fixing a typecheck error, ingesting a new format — the literal sequence of `read` / `edit` / `bash` calls plus what each one returned can be stored as a **trajectory** via `capture_trajectory`. Future agents working on similar tasks in the same codebase call `replay_skill(task)` and get the recipe back as a hint, with drift caveats (codebase revision diff, missing file refs, failure outcomes) so the agent knows what's changed since the recipe was captured.
-
-### Trajectory review pass
-
-After a session ends, `lumen review` walks the session's tool-call log, runs an LLM extractor over multi-step successful chains, and writes the high-signal ones as trajectories. Per-session outcomes (`extracted` / `skipped` / `failed`) land in `session_review` so the same session is never re-extracted. Low-value churn never reaches the graph — only chains that crossed the minimum-step threshold and looked coherent to the extractor get stored. Run on demand or as part of a daemon sweep.
-
-### Skill-first `brain_ops`
-
-The brain's main entry point doesn't just return search results — it returns a **skill-first response shape**: matching trajectories surfaced ahead of free-form chunks, with a per-call token budget hint so the agent can decide whether it has enough context or needs to widen the search. Every `brain_ops` call also writes an exploration-cost row to `query_log` (tokens spent, skill-hit yes/no, latency), so `lumen profile` can show which intents are paying off and which are wasting budget.
-
-### Scope-aware everything
-
-Every source, concept, and trajectory carries a `(scope_kind, scope_key)` pair — `codebase` (git remote SHA1 / fingerprint / local-path), `framework` (next, fastapi, react, …), `language` (ts, py, rust, …), `personal`, or `team`. Retrieval is scope-filtered by default, so work on repo A doesn't pollute results in repo B. Codebase identity collapses cleanly: SSH and HTTPS clones of the same repo produce the same scope key.
-
-### Capture / session summary protocol
-
-The `capture` MCP tool writes the conversation → graph direction. When the assistant is discussing something worth remembering, it calls `capture` with the exact phrasing. `session_summary` closes out a session with a digest of what was covered. **Both run through the PII gate** — emails, API tokens (Anthropic, OpenAI, GitHub, Slack, AWS, GCP), JWTs, Luhn-validated credit cards, phone numbers, private IPv4, and home paths are redacted with stable replacement tokens before any database write.
-
-### Cross-device sync foundation
-
-Every concept-touching mutation — `upsertConcept`, `recordFeedback`, `updateCompiledTruth`, `retireConcept`, `captureTrajectory` — atomically appends a row to an append-only `sync_journal` inside the same SQLite transaction as the entity write. A crash mid-write rolls both back. Each journal row carries an `(op, entity_id, scope, payload, device_id)` tuple plus a UUIDv7-shape sortable id (12 hex unix-ms + 4 hex monotonic counter + 16 hex random). When opt-in sync is enabled, payloads are sealed with X25519 + XChaCha20-Poly1305 (24-byte nonce, fresh ephemeral keypair per envelope) before they leave the device. Domain-separated key derivations: relay routing key, per-scope routing tag, key fingerprint — all derived from a single 32-byte master key the relay never sees. The pipeline ships in tiers: the local journal, crypto envelope, and HTTP push/pull driver are wired into `lumen sync init/enable/push/pull/run/status` (Tier 5a–5c, all merged); the reference Cloudflare Worker relay (Hono + D1, deployable with `wrangler d1 create && wrangler deploy`) lives at `apps/relay/` (Tier 5d). Per-op apply rules — translating pulled entries into local store mutations on the destination device — are the last tier still in flight (Tier 5e).
-
----
-
-## How it works
-
-**Ingestion** — no LLM needed. URL scraping via `@extractus/article-extractor`, PDF via `pdf-parse`, YouTube transcripts via the Innertube captions API, arXiv via Atom + PDF. Code repos via shallow `git clone` with `.gitignore`-aware walk and per-language signature extraction. Datasets (CSV, TSV, JSONL, HuggingFace) produce a schema table plus a 20-row preview. Images use optional local Tesseract OCR when the binary is on PATH (`--no-ocr` skips). Obsidian Web Clipper vaults are watched as a connector — YAML frontmatter promotes the original URL so re-clippings dedup. SHA-256 deduplication throughout, so the same quote across five sources costs one row.
-
-**Compilation** — LLM pass. Extracts concepts and relations from stored chunks, writes them as nodes and weighted directed edges with compiled truth + timeline per concept. Delta-aware: `compile` only touches unprocessed sources. `compile --all` reprocesses everything. `compile -c 5` runs 5 sources in parallel. `compile --model claude-haiku-4-5-20251001` uses a faster/cheaper model.
-
-**Search** — local, no LLM. BM25 via SQLite FTS5 (Porter stemmed), TF-IDF via in-memory inverted index (cosine similarity), optional vector ANN via sqlite-vec (OpenAI or Ollama embeddings, 1536-dim). Fused with Reciprocal Rank Fusion (`score = Σ weight / (k + rank)`, k=60), ranked by relevance density so small high-value chunks beat verbose low-value ones. Intent routing in `brain_ops` short-circuits common cases (concept lookup, graph path, neighborhood) before falling through to the full hybrid pipeline.
-
-**Synthesis** — LLM pass with prompt caching (`cache_control: ephemeral`, ~60-80% cost reduction on repeated calls within a session). `lumen ask` streams tokens to stdout as they arrive. Non-Anthropic providers fall back gracefully.
-
----
-
-## CLI reference
-
-| Command                | What it does                                                             | LLM |
-| ---------------------- | ------------------------------------------------------------------------ | --- |
-| `init`                 | Create `~/.lumen` workspace                                              |     |
-| `add <input>`          | Ingest URL, PDF, YouTube, arXiv, file, folder, code repo, dataset, image |     |
-| `compile`              | Extract concepts + edges from unprocessed sources                        | yes |
-| `enrich`               | Tier-score concepts and LLM-enrich queued ones                           | yes |
-| `embed`                | Generate vector embeddings for chunks                                    | API |
-| `search <query>`       | Hybrid local search (BM25 + TF-IDF + vector + graph)                     |     |
-| `ask <question>`       | Search + streamed LLM-synthesized answer                                 | yes |
-| `graph <subcommand>`   | Overview, pagerank, path, neighbors, communities, report, export         |     |
-| `review`               | LLM extracts trajectories from completed sessions                        | yes |
-| `profile`              | Corpus summary — sources, density, frequent queries                      |     |
-| `status`               | DB statistics (text or JSON)                                             |     |
-| `memory export/import` | Portable JSONL or SQL backup                                             |     |
-| `serve`                | Start the web UI against your local knowledge base                       |     |
-| `install <platform>`   | Wire into Claude Code (`claude`) or Codex (`codex`)                      |     |
-| `watch`                | Manage auto-ingest connectors (folder, rss, arxiv, github, obsidian, …)  |     |
-| `sync <subcommand>`    | E2E-encrypted cross-device sync — init, enable, push, pull, run, status  |     |
-| `daemon`               | Install/uninstall as background launchd/systemd service                  |     |
-
-Compile options: `lumen compile -c 5` (5 parallel), `lumen compile --model claude-haiku-4-5-20251001` (faster model), `lumen compile --all` (reprocess everything).
-
-Add options: `--type <type>` force source type; `--as-dataset` treat an ambiguous text file as tabular data; `--no-ocr` skip OCR when ingesting images; `--from <file>` read inputs line-by-line.
-
-Search options: `lumen search "query" -n 5` (limit results), `lumen search "query" -b 4000` (token budget), `--bm25-only`.
-
-Graph subcommands: `lumen graph status`, `lumen graph pagerank`, `lumen graph path <a> <b>`, `lumen graph neighbors <concept> -d 2`, `lumen graph communities`, `lumen graph report`, `lumen graph export -f json` (or `dot`).
-
-Watch subcommands: `lumen watch add <type> <target>`, `lumen watch list`, `lumen watch get <id>`, `lumen watch remove <id>`, `lumen watch pull <id>`, `lumen watch run`, `lumen watch daemon`.
-
-Sync subcommands: `lumen sync init [--relay <url>]`, `lumen sync enable`/`disable`, `lumen sync push`/`pull`/`run`, `lumen sync status`, `lumen sync reset-error`, `lumen sync show-key [--reveal]`, `lumen sync import-key <base64>`, `lumen sync forget-key`. The relay is opt-in — sync only runs once a master key is generated (or imported) and `enable` is called. Self-host the reference Worker relay at `apps/relay/` or point at any conformant HTTP endpoint.
-
----
-
-## MCP tools (23 total)
-
-```bash
-lumen --mcp    # stdio server
-```
-
-| Group                  | Tools                                                                    |
+| Category               | Tools                                                                    |
 | ---------------------- | ------------------------------------------------------------------------ |
-| **Brain entry point**  | `brain_ops` (intent-routed, skill-first response with budget hint)       |
+| **Brain entry point**  | `brain_ops` (intent-routed; skill-first response with budget hint)       |
 | **Search & retrieval** | `search`, `query`                                                        |
 | **Concept**            | `concept`, `add_link`, `links`, `backlinks`                              |
 | **Graph**              | `god_nodes`, `pagerank`, `path`, `neighbors`, `communities`, `community` |
@@ -335,179 +423,169 @@ lumen --mcp    # stdio server
 | **Trajectory**         | `capture_trajectory`, `replay_skill`                                     |
 | **Meta**               | `status`, `profile`                                                      |
 
-`brain_ops` auto-detects intent from the query shape (concept lookup / graph path / neighborhood / hybrid search), surfaces matching trajectories ahead of free-form chunks, and returns a per-call token-budget hint so the agent can decide whether to widen the search. Every call writes an exploration-cost row to `query_log` (tokens spent, skill-hit, latency) so `lumen profile` can show which intents are paying off. Agents should call this first; everything else is for cases where the agent already knows the specific operation it needs.
+`brain_ops` auto-detects intent from the query shape (concept lookup / graph path / neighborhood / hybrid search), surfaces matching trajectories ahead of free-form chunks, and returns a per-call token-budget hint so the agent can decide whether to widen the search. Every call writes an exploration-cost row to `query_log` so `lumen profile` and `/agent-activity` can show which intents are paying off.
+
+**Agents should call `brain_ops` first.** Everything else is for cases where the agent already knows the specific operation it needs.
 
 ---
 
-## Library API
+## Supported Inputs
+
+### Source types
+
+| Type               | Detection                  | Output                                  |
+| ------------------ | -------------------------- | --------------------------------------- |
+| **URL**            | http(s)://                 | Readability extract, chunked            |
+| **PDF**            | `.pdf`                     | pdf-parse text + heading detection      |
+| **YouTube**        | youtube.com / youtu.be     | transcript via `youtube-transcript`     |
+| **arXiv**          | arxiv.org                  | abstract + sections via arXiv API       |
+| **File**           | any text-like file         | direct chunking                         |
+| **Folder**         | directory path             | walks, respects `.gitignore`            |
+| **Code repo**      | `.git`, code-heavy folder  | per-file symbol extract via tree-sitter |
+| **Dataset**        | `.csv`, `.json`, `.jsonl`  | schema inference + summary rows         |
+| **Image**          | `.png`, `.jpg`, `.webp`, … | OCR (when configured)                   |
+| **Obsidian vault** | folder with `.md` notes    | front-matter aware                      |
+
+### Code repos — languages recognized for symbol extraction
+
+Python, JavaScript, TypeScript, Go, Rust, Java, Kotlin, Scala, C, C++, Ruby, PHP, Shell, Swift, Lua, R, C#, F#, Elixir, Erlang. File extensions map directly to tree-sitter grammars in `apps/cli/src/ingest/code.ts`.
+
+---
+
+## Library Usage
 
 ```ts
 import { createLumen } from 'lumen-kb';
 
 const lumen = createLumen({ dataDir: '~/.lumen' });
-const results = lumen.search({ query: 'attention mechanism', limit: 10 });
+
+// Hybrid search
+const hits = lumen.search({ query: 'attention mechanism', limit: 10 });
+
+// Synthesize an answer from the top chunks
 const answer = await lumen.ask({ question: 'How does self-attention work?' });
+
+// Walk the graph
+const neighbors = lumen.neighbors('attention', { hops: 1 });
+const path = lumen.path('rnn', 'transformer');
+
+// Programmatic ingest
+await lumen.add({ kind: 'pdf', path: './papers/vaswani-2017.pdf' });
+
 lumen.close();
 ```
 
-Returns a frozen handle with these surfaces:
-
-- **Top-level methods** — `add`, `search`, `ask`, `compile`, `status`, `profile`, `dataDir`, `close`
-- **`graph` namespace** — `godNodes`, `pagerank`, `neighbors`, `path`, `communities`, `components`, `toJson`, `toDot`, `report`
-- **`watch` namespace** — `add`, `list`, `get`, `remove`, `pull`, `run`, `runDue`, `handlerTypes`
-- **`sources` namespace** — `get`, `list`, `count`, `countByType`
-- **`concepts` namespace** — `get`, `list`, `count`
-- **`chunks` namespace** — `get`, `list`, `count`
-
-All methods accept an optional `onCall` observability hook for tracing — zero cost when omitted.
+Lower-level access lives under `lumen-kb/store/*`, `lumen-kb/search/*`, `lumen-kb/graph/*`, `lumen-kb/profile/*`, `lumen-kb/sync/*` — these are the same primitives the CLI and MCP server use.
 
 ---
 
-## Framework adapters
+## Framework Adapters
 
-For agents that don't speak MCP, Lumen ships native adapters under `lumen-kb/<adapter>`:
+For agents that don't speak MCP, native adapters expose Lumen as the agent's tool inventory directly.
 
 ```ts
-// OpenAI function calling
-import { openaiTools, handleOpenAIToolCall } from 'lumen-kb/openai';
-
-// Vercel AI SDK
-import { withLumen } from 'lumen-kb/ai-sdk';
-const { system, tools } = withLumen(lumen, { mode: 'profile+search' });
-
-// LangChain
-import { createLumenTools } from 'lumen-kb/langchain';
-
-// Mastra
-import { createMastraTools } from 'lumen-kb/mastra';
+import { tools } from 'lumen-kb/openai'; // OpenAI SDK / Assistants API
+import { tools } from 'lumen-kb/ai-sdk'; // Vercel AI SDK
+import { tools } from 'lumen-kb/langchain'; // LangChain
+import { tools } from 'lumen-kb/mastra'; // Mastra
 ```
 
-All four wrap the same provider-agnostic `tools.ts` surface, so the canonical tool definitions live in one place and the adapters are thin envelopes — no vendor lock-in.
+Same 23 tools, idiomatic shape per framework. Mix and match: an agent can use the Anthropic SDK's tool-use with the AI SDK adapter and the OpenAI Assistants API with the OpenAI adapter, all hitting the same `~/.lumen/lumen.db`.
 
 ---
 
-## Repo layout
-
-Monorepo — Turborepo + pnpm workspaces.
-
-```
-lumen/
-├── apps/
-│   ├── cli/         — CLI and MCP server (the engine, published as lumen-kb)
-│   ├── web/         — Next.js 15 web UI (Better Auth, Zod, shadcn)
-│   ├── landing/     — Marketing site (Next.js 15)
-│   ├── relay/       — Reference Cloudflare Worker (Hono + D1) for E2E-encrypted sync
-│   └── extension/   — Browser extension (placeholder)
-├── docs/            — ALGORITHMS.md, architecture, test plans, design memos
-├── test-benchmarks/ — Side-by-side Mode 1 (bare) vs Mode 2 (agent wired)
-├── benchmarks/      — Ingest / search / graph / mcp benchmark runners
-├── packages/
-│   ├── ui/          — Shared UI primitives
-│   ├── brand/       — Shared logo / colors
-│   ├── tsconfig/    — Shared TS configs
-│   └── eslint-config/
-├── turbo.json
-└── pnpm-workspace.yaml
-```
-
----
-
-## Web UI
-
-`lumen serve` starts a Next.js 15 app that reads directly from `~/.lumen/lumen.db`. No separate server, no duplicate query code.
-
-Pages: overview (sources / concepts / edges / density / pending), hybrid search with per-signal score breakdown, concept browser, concept detail (neighborhood, edges, timeline, score), sources list, and graph dashboard (god nodes, communities, top concepts).
+## Web Dashboard
 
 ```bash
-lumen serve                          # dev mode, http://localhost:3000
-lumen serve --port 4000 --mode prod  # after pnpm build in apps/web
+lumen serve          # Next.js UI on :3000
 ```
+
+| Route              | What's there                                                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                | Overview — concepts/edges/density stats, live memory preview, learn shortcuts                                                   |
+| `/sources`         | Every ingested source with derived-concept counts                                                                               |
+| `/sources/[id]`    | Per-source detail: chunks, derived concepts, content hash, lifecycle                                                            |
+| `/concepts`        | Every concept, sortable by mentions / score                                                                                     |
+| `/concepts/[slug]` | Per-concept: summary, compiled truth, **"Seen in N sources"** attribution, feedback events, backlinks, recent mentions timeline |
+| `/graph`           | Force-directed graph (drag, hover, click to open, fullscreen toggle)                                                            |
+| `/agent-activity`  | What MCP agents have been doing: recent calls, hot topics, savings, tool distribution                                           |
+| `/learn`           | Algorithms, graph density, memory & self-improvement, sync internals                                                            |
+| `/search`          | Hybrid search UI                                                                                                                |
+
+Auth via Better Auth (email + password, magic link, password reset). Web + CLI + MCP all read the same SQLite file, so anything the agent writes shows up live in the UI.
 
 ---
 
-## Storage
+## Cross-device Sync
 
-Everything in `~/.lumen/`:
+Opt-in. Off by default. When you enable it:
 
-```
-~/.lumen/
-├── lumen.db          # SQLite WAL — sources, chunks, FTS5 + sqlite-vec, concepts,
-│                     #   edges, links, embeddings, feedback, aliases, scopes,
-│                     #   trajectories (as sources), classifiers, query_log
-├── config.json       # User config (LLM model, embedding provider, search weights)
-├── .env              # API keys (always checked, even if LUMEN_DIR is set elsewhere)
-├── audit.log         # Append-only JSON-lines operation log
-└── output/           # Generated exports and reports
+```bash
+lumen sync push           # ship local changes
+lumen sync pull           # pull remote changes
 ```
 
-One file. Back it up and you have everything.
+What happens on push:
 
-### Schema versions
+1. Every concept-touching mutation has already landed in `sync_journal` as an append-only row.
+2. Each row is sealed with **X25519 + XChaCha20-Poly1305** using your device's keypair.
+3. Ciphertext is POST'd to a Cloudflare Worker relay (`apps/relay/`, self-hostable in three `wrangler` commands).
+4. **The relay sees opaque bytes, keyed by an unlinkable hash. Plaintext never leaves the box.**
 
-Schema is at **v15**. Migrations are additive and applied automatically on first DB open:
-
-- v5 — vector embeddings
-- v6 — compiled truth + timeline
-- v7 — link management (concept_links)
-- v8 — self-improving classifiers (pattern + fallback tables)
-- v9 — tiered enrichment
-- v10 — scope dimension (scope_kind, scope_key on sources + concepts; scopes registry)
-- v11 — concept scoring + retirement (score, retired_at, retire_reason; concept_feedback log)
-- v12 — concept aliases (merge near-duplicates on write)
-- v13 — exploration-cost telemetry on `query_log` (tokens_spent, skill_hit, latency)
-- v14 — trajectory review pass (`session_review` outcomes per session)
-- v15 — sync foundation (`sync_state` singleton + append-only `sync_journal`)
-
----
-
-## Algorithms
-
-| Algorithm                 | Use                          | Reference                            |
-| ------------------------- | ---------------------------- | ------------------------------------ |
-| BM25                      | Full-text ranking            | Robertson & Zaragoza, 2009           |
-| TF-IDF                    | Vector similarity            | Salton & Buckley, 1988               |
-| Reciprocal Rank Fusion    | Multi-signal merging         | Cormack, Clarke & Butt, 2009         |
-| PageRank                  | Concept importance           | Page, Brin, Motwani & Winograd, 1998 |
-| Label Propagation         | Community detection          | Raghavan, Albert & Kumara, 2007      |
-| Jaccard Similarity        | Near-duplicate detection     | Jaccard, 1901                        |
-| Levenshtein Distance      | Slug similarity              | Levenshtein, 1966                    |
-| Luhn Checksum             | Credit-card validation (PII) | Luhn, 1960                           |
-| Content-Addressed Storage | Source deduplication         | Quinlan & Dorward, 2002              |
-| Extractive Summarization  | Compression                  | Luhn, 1958                           |
-
-Details in [docs/ALGORITHMS.md](./docs/ALGORITHMS.md).
-
----
-
-## Tech stack
-
-```
-Runtime:     Node.js 22+
-Language:    TypeScript 5
-Storage:     better-sqlite3 (WAL, FTS5)
-Vectors:     sqlite-vec (ANN search, cosine similarity, 1536-dim)
-LLM:         @anthropic-ai/sdk (+ OpenRouter, Ollama)
-Embeddings:  OpenAI text-embedding-3-small / Ollama nomic-embed-text
-PDF:         pdf-parse
-URL:         @extractus/article-extractor
-YouTube:     Innertube captions API
-arXiv:       Atom API + PDF extraction
-OCR:         Tesseract (optional, system binary)
-CLI:         Commander.js
-MCP:         @modelcontextprotocol/sdk (23 tools)
-Web:         Next.js 15, Better Auth, Zod, shadcn/ui, Tailwind
-Monorepo:    Turborepo + pnpm 10 workspaces
-```
+Conflicts are resolved last-write-wins per entity with an audit table (`concept_truth_history`) for the losing writes — no CRDT pretending.
 
 ---
 
 ## Privacy
 
-The only network calls are: (a) fetching the URL, paper, video, or repo you asked to ingest, (b) model API calls during `compile`, `enrich`, and `ask` using your own API key, and (c) embedding API calls during `embed` if configured.
+| What stays on disk                                                   | What leaves (opt-in)                                                                           |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Sources (`~/.lumen/`)                                                | Compile / enrich / ask — your API key, your choice of provider (Anthropic, OpenRouter, Ollama) |
+| Chunks + embeddings (`lumen.db`)                                     | Cross-device sync — sealed ciphertext only, key never leaves the device                        |
+| The graph (concepts, edges, aliases, scopes, feedback, trajectories) |                                                                                                |
+| Search, intent routing, dedup, scope routing — all local             |                                                                                                |
+| **Telemetry**                                                        | **Never.** Lumen contains zero analytics.                                                      |
 
-No telemetry. No analytics. Search, graph traversal, compression, chunking, deduplication, near-duplicate merging, alias resolution, scope detection, and PII scrubbing all run locally against the SQLite file.
+PII gate scrubs tokens, emails, JWTs, and secret-looking paths before any capture row hits the journal — the LLM never sees them, the relay never sees them.
 
-The PII gate runs deterministic regex over every agent-originated capture before it hits the database — emails, API tokens, JWTs, Luhn-validated credit cards, phone numbers, private IPv4, and home directory paths are redacted with stable replacement tokens. Strict mode (opt-in) rejects any capture that contains a redacted pattern instead of scrubbing it.
+---
+
+## Configuration
+
+Lumen is zero-config out of the box. Defaults work for the common case. When you need to tune:
+
+| Env var                                                    | Purpose                                 | Default                                        |
+| ---------------------------------------------------------- | --------------------------------------- | ---------------------------------------------- |
+| `LUMEN_DIR`                                                | Workspace location                      | `~/.lumen`                                     |
+| `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` / `OLLAMA_HOST` | LLM provider for compile / enrich / ask | none — compile is local-only until you set one |
+| `BETTER_AUTH_SECRET`                                       | Web UI session secret                   | required in production                         |
+| `LUMEN_SYNC_RELAY_URL`                                     | Sync relay endpoint                     | none — sync off                                |
+| `LUMEN_DEVICE_KEY`                                         | X25519 keypair path                     | `~/.lumen/keys/device.json`                    |
+
+Per-project overrides go in `.lumen/config.json` at the project root.
+
+---
+
+## Repo Layout
+
+```
+lumen/
+├── apps/
+│   ├── cli/          — the engine: ingest, compile, search, MCP server, sync
+│   ├── web/          — Next.js dashboard (Better Auth, MCP-aware UI)
+│   ├── landing/      — editorial marketing site
+│   ├── relay/        — Cloudflare Worker for E2E-encrypted sync
+│   └── extension/    — browser extension (in progress)
+├── packages/
+│   ├── brand/        — shared site metadata
+│   ├── ui/           — shared UI hooks
+│   ├── eslint-config/
+│   └── tsconfig/
+├── docs/             — algorithms, graph density, memory, sync internals
+└── turbo.json
+```
+
+Monorepo with **Turborepo + pnpm workspaces**. `pnpm dev` runs everything in parallel.
 
 ---
 
@@ -515,15 +593,39 @@ The PII gate runs deterministic regex over every agent-originated capture before
 
 ```bash
 pnpm install
-pnpm dev                          # turbo dev — all apps in parallel
-pnpm --filter lumen-kb dev        # CLI only
-pnpm --filter @lumen/web dev      # web only
-pnpm build
-pnpm lint && pnpm format:check    # pre-commit check
-pnpm test                         # vitest
+pnpm dev                          # turbo: cli watcher + web + landing
+pnpm build                        # turbo: all workspaces
+pnpm lint && pnpm format:check    # before every commit
+pnpm test                         # vitest suite (700+ tests)
+
+pnpm --filter lumen-kb dev        # just the CLI watcher
+pnpm --filter @lumen/web dev      # just the dashboard on :3000
+pnpm --filter @lumen/landing dev  # just the marketing site on :3001
 ```
 
-Tests use a temp directory: `LUMEN_DIR=$(mktemp -d)`. The CLI workspace has **784+ tests** covering ingest, chunker, search, graph, store CRUD, scope resolver, scoring, dedup, trajectory capture/replay, trajectory review pass, PII scrubber, MCP server contract, framework adapters, query telemetry, sync journal, and the encryption envelope.
+Hard project rules (also in `CLAUDE.md`):
+
+- `type` not `interface`. No exceptions.
+- `/** JSDoc */` not `//`. Every comment is JSDoc style.
+- `.js` extensions in all relative imports inside `apps/cli/` (ESM requires it).
+- `import type` for type-only imports.
+- No classes, no default exports (except Next.js framework files), no enums, no `any`.
+
+---
+
+## Troubleshooting
+
+**"Workspace not initialized"** — Run `lumen init` first; it creates `~/.lumen/lumen.db`.
+
+**`lumen compile` hangs or errors** — Check that an API key is set (`ANTHROPIC_API_KEY` or `OPENROUTER_API_KEY`). Compile is the only step that calls out to an LLM.
+
+**"Vector search returns nothing"** — Run `lumen embed` once after the first compile. The `sqlite-vec` extension loads at startup; if your build couldn't load it, BM25 + TF-IDF still work.
+
+**MCP server can't connect** — Verify the MCP config (`.mcp.json` in your project, or `~/.claude.json` globally) points at `lumen serve --mcp`. Try running it standalone first to confirm it boots.
+
+**Dashboard says "no data"** — The web app reads the same `~/.lumen/lumen.db` the CLI writes to. If the dashboard shows zeros, you haven't run `lumen add` + `lumen compile` yet, or `LUMEN_DIR` is set to a different directory than the CLI is using.
+
+**Cross-device sync silently does nothing** — Sync is opt-in. Set `LUMEN_SYNC_RELAY_URL`, generate a device key, and run `lumen sync push` once. The relay receives ciphertext only — if it's working, you'll see push counts in `lumen status`.
 
 ---
 
@@ -550,6 +652,18 @@ Open an issue before large changes. High-value areas:
 - [Security](./SECURITY.md)
 - [Benchmark plan](./docs/BENCHMARK-PLAN.md)
 
+---
+
 ## License
 
-[MIT](./LICENSE.md)
+MIT — see [LICENSE.md](./LICENSE.md).
+
+---
+
+<div align="center">
+
+**A persistent brain for Claude Code, Cursor, Codex, OpenAI SDK, AI SDK, LangChain, Mastra, and anything else that speaks MCP.**
+
+[Report Bug](https://github.com/Sardor-M/Lumen/issues) · [Request Feature](https://github.com/Sardor-M/Lumen/issues) · [Docs](https://github.com/Sardor-M/Lumen/tree/main/docs)
+
+</div>
