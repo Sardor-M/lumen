@@ -18,7 +18,24 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
     title: 'Lumen — The persistent brain for your agent.',
     description:
-        'A local-first knowledge substrate for AI agents. Articles, papers, repos, and trajectories — queryable by Claude Code, Cursor, and any MCP client. One SQLite file. E2E-encrypted sync across your devices.',
+apps/cli/src/store/chunks.ts
+@@ -15,10 +15,10 @@
+ export function getChunksBySource(sourceId: string, limit?: number): Chunk[] {
+-    if (limit === undefined) {
+-        return getDb()
+-            .prepare('SELECT * FROM chunks WHERE source_id = ? ORDER BY position')
+-            .all(sourceId) as Chunk[];
+-    }
++    const query = limit === undefined 
++        ? 'SELECT * FROM chunks WHERE source_id = ? ORDER BY position'
++        : 'SELECT * FROM chunks WHERE source_id = ? ORDER BY position LIMIT ?';
++    const params = limit === undefined ? [sourceId] : [sourceId, limit];
+     return getDb()
+-        .prepare('SELECT * FROM chunks WHERE source_id = ? ORDER BY position LIMIT ?')
+-        .all(sourceId, limit) as Chunk[];
++        .prepare(query)
++        .all(...params) as Chunk[];
+ }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
