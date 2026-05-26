@@ -1030,7 +1030,7 @@ function ChipPanel({ chip }: { chip: ChipState }) {
     const n = chip?.node;
     return (
         <div
-            className={`ll-chip-panel${chip ? 'open' : ''}`}
+            className={`ll-chip-panel${chip ? ' open' : ''}`}
             role="dialog"
             aria-label="Source chunk"
             aria-hidden={!chip}
