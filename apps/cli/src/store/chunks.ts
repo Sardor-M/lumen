@@ -12,10 +12,22 @@ export function insertChunks(chunks: Chunk[]): void {
     tx(chunks);
 }
 
-export function getChunksBySource(sourceId: string): Chunk[] {
+export function getChunksBySource(sourceId: string, limit?: number): Chunk[] {
+    if (limit === undefined) {
+        return getDb()
+            .prepare('SELECT * FROM chunks WHERE source_id = ? ORDER BY position')
+            .all(sourceId) as Chunk[];
+    }
     return getDb()
-        .prepare('SELECT * FROM chunks WHERE source_id = ? ORDER BY position')
-        .all(sourceId) as Chunk[];
+        .prepare('SELECT * FROM chunks WHERE source_id = ? ORDER BY position LIMIT ?')
+        .all(sourceId, limit) as Chunk[];
+}
+
+export function countChunksBySource(sourceId: string): number {
+    const row = getDb()
+        .prepare('SELECT COUNT(*) AS n FROM chunks WHERE source_id = ?')
+        .get(sourceId) as { n: number };
+    return row.n;
 }
 
 export function getChunk(id: string): Chunk | null {

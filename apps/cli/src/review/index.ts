@@ -66,7 +66,11 @@ export async function reviewSessions(
         summary.sessions_inspected++;
         const session = loadSessionLog(sessionId);
         if (!session) {
-            recordReview({ session_id: sessionId, outcome: 'skipped', notes: 'session log unavailable' });
+            recordReview({
+                session_id: sessionId,
+                outcome: 'skipped',
+                notes: 'session log unavailable',
+            });
             summary.sessions_skipped++;
             continue;
         }

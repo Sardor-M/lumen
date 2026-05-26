@@ -13,7 +13,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import type { ForceGraphMethods, ForceGraphProps } from 'react-force-graph-2d';
 import Link from 'next/link';
-import { ArrowUpRight, ChevronDown, Info, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, Info, Maximize2, Minimize2, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { GraphSnapshot } from '@/lib/lumen';
@@ -171,7 +171,29 @@ export function KnowledgeGraph({
     const [hideSingletons, setHideSingletons] = useState(true);
     const [legendOpen, setLegendOpen] = useState(false);
     const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
     const theme = useThemeTokens();
+
+    /**
+     * Press Escape to exit fullscreen. Body scroll-lock prevents
+     * background pan; scroll position is restored on exit so the user
+     * lands back exactly where they were on the page.
+     */
+    useEffect(() => {
+        if (!isFullscreen) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setIsFullscreen(false);
+        };
+        const scrollY = window.scrollY;
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            document.body.style.overflow = prevOverflow;
+            window.scrollTo(0, scrollY);
+        };
+    }, [isFullscreen]);
 
     const { data, singletonCount } = useMemo(() => {
         const degree = new Map<string, number>();
@@ -254,7 +276,7 @@ export function KnowledgeGraph({
 
     const handleNodeClick = useCallback(
         (node: GraphNode) => {
-            router.push(`/dashboard/concepts/${node.id}`);
+            router.push(`/concepts/${node.id}`);
         },
         [router],
     );
@@ -366,78 +388,99 @@ export function KnowledgeGraph({
 
     if (snapshot.nodes.length === 0) return null;
 
+    /**
+     * Outer placeholder always occupies its slot in the page layout
+     * (so nothing reflows when fullscreen toggles). The inner surface
+     * either fills the placeholder (normal mode) or escapes to a fixed
+     * viewport overlay (fullscreen mode).
+     */
     return (
-        <div
-            className="bg-card/40 dark:bg-card/30 relative w-full overflow-hidden rounded-xl border"
-            style={{ height: containerHeight }}
-        >
-            {!isPreview && (
-                <>
-                    <Toolbar
-                        filter={filter}
-                        setFilter={setFilter}
-                        hideSingletons={hideSingletons}
-                        setHideSingletons={setHideSingletons}
-                        visibleNodes={data.nodes.length}
-                        totalNodes={snapshot.nodes.length}
-                        edges={snapshot.edges.length}
-                        singletonCount={singletonCount}
-                    />
+        <div className="relative w-full" style={{ height: containerHeight }}>
+            <div
+                className={cn(
+                    'overflow-hidden',
+                    isFullscreen
+                        ? 'bg-background fixed inset-0 z-50'
+                        : 'bg-card/40 dark:bg-card/30 absolute inset-0 rounded-xl border',
+                )}
+            >
+                {!isPreview && (
+                    <>
+                        <Toolbar
+                            filter={filter}
+                            setFilter={setFilter}
+                            hideSingletons={hideSingletons}
+                            setHideSingletons={setHideSingletons}
+                            visibleNodes={data.nodes.length}
+                            totalNodes={snapshot.nodes.length}
+                            edges={snapshot.edges.length}
+                            singletonCount={singletonCount}
+                        />
 
-                    <Legend
-                        open={legendOpen}
-                        setOpen={setLegendOpen}
-                        communities={communitiesInView}
-                        relations={relationsInView}
+                        <FullscreenToggle
+                            isFullscreen={isFullscreen}
+                            legendOpen={legendOpen}
+                            onToggle={() => setIsFullscreen((v) => !v)}
+                        />
+
+                        <Legend
+                            open={legendOpen}
+                            setOpen={setLegendOpen}
+                            communities={communitiesInView}
+                            relations={relationsInView}
+                            nodes={data.nodes.length}
+                            edges={snapshot.edges.length}
+                            communitiesCount={snapshot.communities.length}
+                            disconnected={singletonCount}
+                            hideSingletons={hideSingletons}
+                        />
+
+                        <div className="text-muted-foreground absolute right-3 bottom-3 z-10 text-xs">
+                            drag · scroll to zoom · right-click to unpin · click to open
+                            {isFullscreen && <span className="ml-2 opacity-70">· esc to exit</span>}
+                        </div>
+                    </>
+                )}
+
+                {isPreview && (
+                    <PreviewOverlay
                         nodes={data.nodes.length}
                         edges={snapshot.edges.length}
-                        communitiesCount={snapshot.communities.length}
-                        disconnected={singletonCount}
-                        hideSingletons={hideSingletons}
-                    />
-
-                    <div className="text-muted-foreground absolute right-3 bottom-3 z-10 text-xs">
-                        drag · scroll to zoom · right-click to unpin · click to open
-                    </div>
-                </>
-            )}
-
-            {isPreview && (
-                <PreviewOverlay
-                    nodes={data.nodes.length}
-                    edges={snapshot.edges.length}
-                    communities={snapshot.communities.length}
-                    href={href}
-                />
-            )}
-
-            <div ref={containerRef} className="h-full w-full">
-                {size.w > 0 && size.h > 0 && (
-                    <ForceGraph2D
-                        ref={graphRef}
-                        graphData={data}
-                        width={size.w}
-                        height={size.h}
-                        backgroundColor={theme.background}
-                        nodeRelSize={NODE_BASE_RADIUS}
-                        nodeLabel={(n) => `${n.name} — ${n.degree} edges · ${n.mentions} mentions`}
-                        nodeCanvasObject={drawNode}
-                        nodeCanvasObjectMode={() => 'replace'}
-                        linkCanvasObject={drawLink}
-                        linkCanvasObjectMode={() => 'replace'}
-                        linkDirectionalArrowLength={isPreview ? 0 : 2.5}
-                        linkDirectionalArrowRelPos={0.92}
-                        onNodeClick={isPreview ? undefined : handleNodeClick}
-                        onNodeHover={isPreview ? undefined : handleNodeHover}
-                        onNodeDragEnd={handleNodeDragEnd}
-                        onNodeRightClick={isPreview ? undefined : handleNodeRightClick}
-                        enableNodeDrag={true}
-                        enableZoomInteraction={!isPreview}
-                        enablePanInteraction={!isPreview}
-                        cooldownTicks={isPreview ? 80 : 160}
-                        warmupTicks={isPreview ? 30 : 60}
+                        communities={snapshot.communities.length}
+                        href={href}
                     />
                 )}
+
+                <div ref={containerRef} className="h-full w-full">
+                    {size.w > 0 && size.h > 0 && (
+                        <ForceGraph2D
+                            ref={graphRef}
+                            graphData={data}
+                            width={size.w}
+                            height={size.h}
+                            backgroundColor={theme.background}
+                            nodeRelSize={NODE_BASE_RADIUS}
+                            nodeLabel={(n) =>
+                                `${n.name} — ${n.degree} edges · ${n.mentions} mentions`
+                            }
+                            nodeCanvasObject={drawNode}
+                            nodeCanvasObjectMode={() => 'replace'}
+                            linkCanvasObject={drawLink}
+                            linkCanvasObjectMode={() => 'replace'}
+                            linkDirectionalArrowLength={isPreview ? 0 : 2.5}
+                            linkDirectionalArrowRelPos={0.92}
+                            onNodeClick={isPreview ? undefined : handleNodeClick}
+                            onNodeHover={isPreview ? undefined : handleNodeHover}
+                            onNodeDragEnd={handleNodeDragEnd}
+                            onNodeRightClick={isPreview ? undefined : handleNodeRightClick}
+                            enableNodeDrag={true}
+                            enableZoomInteraction={!isPreview}
+                            enablePanInteraction={!isPreview}
+                            cooldownTicks={isPreview ? 80 : 160}
+                            warmupTicks={isPreview ? 30 : 60}
+                        />
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -637,7 +680,7 @@ function Legend({
                             help="No edges yet — usually a concept that only appears in one source."
                         />
                         <Link
-                            href="/dashboard/learn/graph-density"
+                            href="/learn/graph-density"
                             className="text-foreground inline-block underline underline-offset-2"
                         >
                             Why? →
@@ -706,6 +749,41 @@ function Legend({
     );
 }
 
+function FullscreenToggle({
+    isFullscreen,
+    legendOpen,
+    onToggle,
+}: {
+    isFullscreen: boolean;
+    legendOpen: boolean;
+    onToggle: () => void;
+}) {
+    /**
+     * Sits to the left of the legend control. When the legend is collapsed
+     * (h-8 w-8 icon button at right-3) we offset by ~44px; when it's open
+     * (w-56 panel at right-3) we offset past the panel.
+     */
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            aria-pressed={isFullscreen}
+            title={isFullscreen ? 'Exit fullscreen (esc)' : 'Fullscreen'}
+            className={cn(
+                'bg-background/80 border-border hover:bg-background focus-visible:ring-ring/40 absolute top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-md border backdrop-blur transition-all focus-visible:ring-2 focus-visible:outline-none',
+                legendOpen ? 'right-[15rem]' : 'right-14',
+            )}
+        >
+            {isFullscreen ? (
+                <Minimize2 className="text-muted-foreground h-3.5 w-3.5" />
+            ) : (
+                <Maximize2 className="text-muted-foreground h-3.5 w-3.5" />
+            )}
+        </button>
+    );
+}
+
 function CollapsibleSection({ title, children }: { title: string; children: React.ReactNode }) {
     const [open, setOpen] = useState(false);
     return (
@@ -741,7 +819,9 @@ function Swatch({
             <span
                 className={cn(
                     'mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full',
-                    shape === 'dot' ? (color ?? 'bg-foreground') : 'border-muted-foreground/60 border border-dashed',
+                    shape === 'dot'
+                        ? (color ?? 'bg-foreground')
+                        : 'border-muted-foreground/60 border border-dashed',
                 )}
             />
             <p>

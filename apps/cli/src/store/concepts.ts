@@ -294,6 +294,34 @@ export function listConcepts(): Concept[] {
     return rows.map(rowToConcept);
 }
 
+/** SQLite default SQLITE_MAX_VARIABLE_NUMBER ceiling. */
+const SQLITE_MAX_PARAMS = 999;
+
+/**
+ * Batched read for a known set of slugs — one SQL statement instead of N
+ * separate `getConcept` calls. Aliases are resolved up front so the IN-list
+ * hits canonical rows; missing slugs are silently dropped.
+ *
+ * When the resolved slug list exceeds SQLite's 999-variable limit the query
+ * is split into chunks to avoid a "too many SQL variables" runtime error.
+ * Result order is not guaranteed.
+ */
+export function getConceptsBySlugs(slugs: readonly string[]): Concept[] {
+    if (slugs.length === 0) return [];
+    const resolved = Array.from(new Set(slugs.map((s) => resolveAlias(s))));
+    const db = getDb();
+    const results: Concept[] = [];
+    for (let i = 0; i < resolved.length; i += SQLITE_MAX_PARAMS) {
+        const batch = resolved.slice(i, i + SQLITE_MAX_PARAMS);
+        const placeholders = batch.map(() => '?').join(',');
+        const rows = db
+            .prepare(`SELECT * FROM concepts WHERE slug IN (${placeholders})`)
+            .all(...batch) as Record<string, unknown>[];
+        results.push(...rows.map(rowToConcept));
+    }
+    return results;
+}
+
 /**
  * Overwrite the cumulative score for a concept. Auto-retires when the new
  * score crosses the retire threshold (using `reason` if provided, else a

@@ -8,9 +8,17 @@
  */
 
 import 'server-only';
+import { cache } from 'react';
 import { isInitialized } from 'lumen-kb/utils/paths';
-import { countSources, listSources } from 'lumen-kb/store/sources';
-import { countConcepts, listConcepts, getConcept } from 'lumen-kb/store/concepts';
+import { countSources, getSource, listSources } from 'lumen-kb/store/sources';
+import {
+    countConcepts,
+    getConcept,
+    getConceptsBySlugs,
+    getSourceConcepts,
+    listConcepts,
+} from 'lumen-kb/store/concepts';
+import { countChunksBySource, getChunksBySource } from 'lumen-kb/store/chunks';
 import { countEdges, listEdges, getEdgesFrom, getEdgesTo } from 'lumen-kb/store/edges';
 import { searchBm25 } from 'lumen-kb/search/bm25';
 import { searchTfIdf } from 'lumen-kb/search/tfidf';
@@ -87,6 +95,34 @@ export function sources() {
     if (!isInitialized()) return [];
     return listSources();
 }
+
+/** Max chunks fetched for the detail page; only the first 10 are rendered. */
+const SOURCE_CHUNK_PREVIEW_LIMIT = 12;
+
+/**
+ * Single-source detail bundle for the /sources/[id] page.
+ * - Chunks are capped at SOURCE_CHUNK_PREVIEW_LIMIT to keep payloads small;
+ *   the true total is reported separately so the UI can show "Chunks (N)".
+ * - Derived concepts are hydrated in a single batched query instead of one
+ *   `getConcept` call per slug — turns an N+1 into a 1.
+ * - Memoized with `React.cache` so multiple components rendering against
+ *   the same id during one request share the result.
+ */
+export const source = cache((id: string) => {
+    if (!isInitialized()) return null;
+    const s = getSource(id);
+    if (!s) return null;
+    const chunks = getChunksBySource(id, SOURCE_CHUNK_PREVIEW_LIMIT);
+    const chunkTotal = countChunksBySource(id);
+    const derivedConcepts = getConceptsBySlugs(getSourceConcepts(id));
+    return {
+        ...s,
+        chunks,
+        chunk_count: chunkTotal,
+        derived_concepts: derivedConcepts,
+        concept_count: derivedConcepts.length,
+    };
+});
 
 export function concepts() {
     if (!isInitialized()) return [];
