@@ -423,4 +423,4 @@ FAILURE RECOVERY
 
 ---
 
-_Pairs with `docs/articles/lumen-technical-article.en.md` (the why) and `docs/test-plans/multi-device-agent-memory.md` (the rigorous version of Acts 3-4). Last updated against `main` at the time of writing._
+_Pairs with `docs/articles/lumen-technical-article.en.md` (the why). Last updated against `main` at the time of writing._

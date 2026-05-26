@@ -394,14 +394,6 @@ lumen compile       ─┤                            │   ✓ concept count ma
                             cryptography and conflict-resolution rules at the level of formulas +
                             file paths.
                         </li>
-                        <li>
-                            For a rigorous verification runbook (10 phases, with explicit validation
-                            gates):{' '}
-                            <code className="bg-muted rounded px-1 font-mono text-xs">
-                                docs/test-plans/multi-device-agent-memory.md
-                            </code>
-                            .
-                        </li>
                     </ul>
                 </CardContent>
             </Card>
