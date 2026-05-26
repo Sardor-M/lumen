@@ -611,6 +611,9 @@ export function LandingGraph() {
         const refs: NodeRefs[] = nodes.map((n) => {
             const g = document.createElementNS(SVG_NS, 'g');
             g.setAttribute('class', 'll-gnode');
+            g.setAttribute('tabindex', '0');
+            g.setAttribute('role', 'button');
+            g.setAttribute('aria-label', n.label);
             g.style.cursor = 'grab';
             g.dataset.id = n.id;
 
@@ -644,6 +647,19 @@ export function LandingGraph() {
             label.setAttribute('pointer-events', 'none');
             label.textContent = n.label;
             labelLayer.appendChild(label);
+
+            g.addEventListener('keydown', (e: KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (selectedId === n.id) deselect();
+                    else selectNode(n);
+                }
+            });
+            g.addEventListener('focus', () => highlightNeighborhood(n.id));
+            g.addEventListener('blur', () => {
+                if (!selectedId) clearHighlight();
+                else highlightNeighborhood(selectedId);
+            });
 
             return { g, circle: c, halo, label };
         });
