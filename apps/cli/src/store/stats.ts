@@ -8,8 +8,7 @@
  */
 
 import { statSync } from 'node:fs';
-import { getDb } from './database.js';
-import { isVecAvailable } from './database.js';
+import { getDb, isVecAvailable } from './database.js';
 import { getDbPath } from '../utils/paths.js';
 
 export type TableCount = {
@@ -45,7 +44,7 @@ export type VectorStats = {
     table_present: boolean;
     /** Row count, null when not present. */
     rows: number | null;
-    /** Embedding dimensions, hard-coded by the v5 schema. Null if not present. */
+    /** Embedding dimensions parsed from the vec_chunks DDL in sqlite_master. Null if not present. */
     dimensions: number | null;
     /** Most recent chunk.embedded_at, null when no chunks are embedded. */
     last_embedded_at: string | null;
@@ -108,7 +107,7 @@ export function getDatabaseStats(): DatabaseStats {
     const tables: TableCount[] = [];
     for (const name of REPORTED_TABLES) {
         try {
-            const row = db.prepare(`SELECT COUNT(*) AS n FROM ${name}`).get() as { n: number };
+            const row = db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number };
             tables.push({ name, rows: row.n });
         } catch {
             /** Table doesn't exist on this version — skip silently. */
@@ -141,6 +140,7 @@ export function getVectorStats(): VectorStats {
 
     let rows: number | null = null;
     let lastEmbeddedAt: string | null = null;
+    let dimensions: number | null = null;
     if (present) {
         try {
             const r = db.prepare('SELECT COUNT(*) AS n FROM vec_chunks').get() as { n: number };
@@ -156,13 +156,24 @@ export function getVectorStats(): VectorStats {
         } catch {
             lastEmbeddedAt = null;
         }
+        try {
+            const ddl = db
+                .prepare(
+                    `SELECT sql FROM sqlite_master WHERE type IN ('table','shadow') AND name = 'vec_chunks'`,
+                )
+                .get() as { sql: string } | undefined;
+            const match = ddl?.sql?.match(/float\[(\d+)\]/);
+            if (match) dimensions = parseInt(match[1], 10);
+        } catch {
+            dimensions = null;
+        }
     }
 
     return {
         extension_loaded: extLoaded,
         table_present: present,
         rows,
-        dimensions: present ? 1536 : null,
+        dimensions,
         last_embedded_at: lastEmbeddedAt,
     };
 }
