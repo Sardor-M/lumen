@@ -16,9 +16,18 @@ import {
     getConcept,
     getConceptsBySlugs,
     getSourceConcepts,
+    getSourcesForConcept,
     listConcepts,
 } from 'lumen-kb/store/concepts';
 import { countChunksBySource, getChunksBySource } from 'lumen-kb/store/chunks';
+import {
+    getDatabaseStats,
+    getFtsStats,
+    getVectorStats,
+    type DatabaseStats,
+    type FtsStats,
+    type VectorStats,
+} from 'lumen-kb/store/stats';
 import { countEdges, listEdges, getEdgesFrom, getEdgesTo } from 'lumen-kb/store/edges';
 import { searchBm25 } from 'lumen-kb/search/bm25';
 import { searchTfIdf } from 'lumen-kb/search/tfidf';
@@ -27,6 +36,14 @@ import { godNodes, neighborhood } from 'lumen-kb/graph/engine';
 import { pagerank } from 'lumen-kb/graph/pagerank';
 import { detectCommunities } from 'lumen-kb/graph/cluster';
 import { getProfile } from 'lumen-kb/profile/cache';
+import {
+    explorationCostAvoided,
+    frequentTopics,
+    queryCountByTool,
+    recentQueries,
+} from 'lumen-kb/store/query-log';
+import { feedbackTotal, listFeedback } from 'lumen-kb/store/feedback';
+import { getBackLinks, getLinksFrom } from 'lumen-kb/store/links';
 import {
     countDevices,
     countJournal,
@@ -129,16 +146,81 @@ export function concepts() {
     return listConcepts();
 }
 
-export function concept(slug: string) {
+/**
+ * Single-concept detail bundle. Aside from the concept row itself, we
+ * include:
+ *   - the 1-hop neighborhood for the relationship cards,
+ *   - inbound + outbound typed edges from the `edges` table,
+ *   - the sources this concept was extracted from (with relevance),
+ *   - the most recent feedback events + cumulative net score, and
+ *   - the typed `concept_links` table (separate from `edges`) — used
+ *     for in-prose backlinks generated from compiled_truth scanning.
+ * Memoized so the page server component + any sibling components
+ * rendering against the same slug share one read.
+ */
+export const concept = cache((slug: string) => {
     if (!isInitialized()) return null;
     const c = getConcept(slug);
     if (!c) return null;
     return {
         ...c,
-        neighborhood: neighborhood(slug, 1),
-        outgoing: getEdgesFrom(slug),
-        incoming: getEdgesTo(slug),
+        neighborhood: neighborhood(c.slug, 1),
+        outgoing: getEdgesFrom(c.slug),
+        incoming: getEdgesTo(c.slug),
+        sources: getSourcesForConcept(c.slug),
+        feedback: listFeedback(c.slug, 10),
+        feedback_net: feedbackTotal(c.slug),
+        outbound_links: getLinksFrom(c.slug),
+        backlinks: getBackLinks(c.slug),
     };
+});
+
+/* =========================================================================
+   Agent telemetry surface — the query_log + cost-avoided aggregates
+   captured by every MCP tool call. Used by the overview page so the
+   user can see what the agent has been asking, when, and how much
+   exploration cost it saved.
+   ========================================================================= */
+
+/** Last N tool calls — tool_name, query_text, timestamp. */
+export function recentActivity(limit = 20) {
+    if (!isInitialized()) return [];
+    return recentQueries(limit);
+}
+
+/** Top query strings by frequency — what the agent keeps asking about. */
+export function hotTopics(limit = 8) {
+    if (!isInitialized()) return [];
+    return frequentTopics(limit);
+}
+
+/** Histogram of tool calls keyed by MCP tool name. */
+export function toolCallStats() {
+    if (!isInitialized()) return {};
+    return queryCountByTool();
+}
+
+/**
+ * Exploration cost avoided over the last `days` days — sessions where
+ * the agent hit a known concept short-circuited what would otherwise
+ * have been a full exploration loop. Drives the "tokens saved" callout.
+ */
+export function savings(days = 7) {
+    if (!isInitialized()) {
+        return {
+            days,
+            total_sessions: 0,
+            skill_aided_sessions: 0,
+            exploration_sessions: 0,
+            hit_rate: 0,
+            baseline_tokens: 0,
+            with_skill_tokens: 0,
+            estimated_savings_tokens: 0,
+            estimated_savings_usd: 0,
+            by_scope: [],
+        };
+    }
+    return explorationCostAvoided(days);
 }
 
 export function graphSnapshot(opts?: { limit?: number }) {
@@ -216,5 +298,34 @@ export function syncActivity(opts?: { limit?: number }): SyncActivity {
         entries_24h: countJournalSince(since),
         pending_push: countUnpushed(),
         pending_apply: countPendingApply(),
+    };
+}
+
+/* =========================================================================
+   Storage introspection — drives /storage. Pure SQL + fs reads, fast
+   enough to run on every page render.
+   ========================================================================= */
+
+export type StorageSnapshot = {
+    initialized: boolean;
+    database: DatabaseStats | null;
+    vector: VectorStats | null;
+    fts: FtsStats | null;
+};
+
+/**
+ * Aggregate snapshot consumed by /storage. Returns a `not initialized`
+ * carrier when there's no workspace so the page can render its empty
+ * state without crashing.
+ */
+export function storageSnapshot(): StorageSnapshot {
+    if (!isInitialized()) {
+        return { initialized: false, database: null, vector: null, fts: null };
+    }
+    return {
+        initialized: true,
+        database: getDatabaseStats(),
+        vector: getVectorStats(),
+        fts: getFtsStats(),
     };
 }

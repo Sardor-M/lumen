@@ -1,10 +1,11 @@
 import { getDb } from './database.js';
 import type {
     Concept,
+    EnrichmentTier,
     ScopeKind,
+    Source,
     SourceConcept,
     TimelineEntry,
-    EnrichmentTier,
 } from '../types/index.js';
 import { DEFAULT_SCOPE_KIND, DEFAULT_SCOPE_KEY, RETIRE_THRESHOLD } from '../types/index.js';
 import { invalidateProfile } from '../profile/invalidate.js';
@@ -516,6 +517,29 @@ export function getConceptSources(slug: string): string[] {
         )
         .all(resolveAlias(slug)) as { source_id: string }[];
     return rows.map((r) => r.source_id);
+}
+
+export type SourceAttribution = Omit<Source, 'content'> & { relevance: number };
+
+/**
+ * Batched read: full source row + relevance for every source this concept
+ * was derived from, ordered by relevance DESC. Single JOIN replaces an N+1
+ * pattern of `getConceptSources` → `getSource` per id. Excludes `content`
+ * because it's never needed on the concept detail page and can be large.
+ */
+export function getSourcesForConcept(slug: string): SourceAttribution[] {
+    const rows = getDb()
+        .prepare(
+            `SELECT s.id, s.title, s.url, s.content_hash, s.source_type, s.added_at,
+                    s.compiled_at, s.word_count, s.language, s.metadata,
+                    s.scope_kind, s.scope_key, sc.relevance
+               FROM source_concepts sc
+               JOIN sources s ON s.id = sc.source_id
+              WHERE sc.concept_slug = ?
+              ORDER BY sc.relevance DESC`,
+        )
+        .all(resolveAlias(slug)) as SourceAttribution[];
+    return rows;
 }
 
 export function getSourceConcepts(sourceId: string): string[] {
