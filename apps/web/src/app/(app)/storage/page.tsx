@@ -18,6 +18,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { storageSnapshot } from '@/lib/lumen';
+import { relativeTime } from '@/lib/time';
 
 const KB = 1024;
 const MB = KB * 1024;
@@ -31,20 +32,6 @@ function humanBytes(bytes: number | null): string {
     return `${(bytes / GB).toFixed(2)} GB`;
 }
 
-function relativeTime(iso: string | null): string {
-    if (!iso) return '—';
-    const time = new Date(iso).getTime();
-    if (isNaN(time)) return '—';
-    const diff = Date.now() - time;
-    const minutes = Math.round(diff / 60_000);
-    if (minutes < 1) return 'just now';
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.round(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.round(hours / 24);
-    if (days < 30) return `${days}d ago`;
-    return `${Math.round(days / 30)}mo ago`;
-}
 
 export default function StoragePage() {
     const snap = storageSnapshot();
