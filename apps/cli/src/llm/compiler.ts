@@ -167,7 +167,12 @@ export async function compileSource(
      * graph ended up fragmented into per-source islands.
      */
     const inPassSlugs = new Set(response.concepts.map((c) => toSlug(c.slug || c.name)));
-    const allBrainSlugs = allConcepts.map((c) => c.slug);
+    const allBrainSlugs = Array.from(
+        new Set([
+            ...allConcepts.filter((c) => c.retired_at === null).map((c) => c.slug),
+            ...inPassSlugs,
+        ]),
+    );
 
     const resolveSlug = (raw: string): string | null => {
         const slug = toSlug(raw);
