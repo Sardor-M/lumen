@@ -8,13 +8,24 @@ import {
     appendTimeline,
     updateCompiledTruth,
     linkSourceConcept,
+    listConcepts,
 } from '../store/concepts.js';
 import { upsertEdge } from '../store/edges.js';
 import { markCompiled } from '../store/sources.js';
 import { autoLinkFromCompiledTruth } from '../store/links.js';
+import { slugSimilarity } from '../dedup/similarity.js';
+import { SLUG_SIM_THRESHOLD } from '../dedup/policy.js';
 import { toSlug } from '../utils/slug.js';
 import { audit } from '../utils/logger.js';
 import type { LumenConfig, CompilationResult, RelationType } from '../types/index.js';
+
+/**
+ * How many existing concepts to surface to the LLM as a "reuse these
+ * slugs" hint. 80 keeps the prompt overhead well under 2k tokens (each
+ * entry is ~25 chars on average) while covering the high-PageRank core
+ * of the brain. Ordered by mention_count DESC via `listConcepts`.
+ */
+const KNOWN_CONCEPT_HINT_LIMIT = 80;
 
 const VALID_RELATIONS: Set<string> = new Set([
     'implements',
@@ -55,7 +66,18 @@ export async function compileSource(
         .slice(0, 30)
         .map((c) => ({ content: c.content, heading: c.heading }));
 
-    const userPrompt = compileUserPrompt(sourceTitle, representativeChunks);
+    /**
+     * Surface the most-mentioned active concepts to the LLM so it can reuse
+     * their slugs instead of coining variants. Retired concepts are
+     * excluded — we don't want the LLM resurrecting them by reference.
+     */
+    const allConcepts = listConcepts();
+    const knownConcepts = allConcepts
+        .filter((c) => c.retired_at === null)
+        .slice(0, KNOWN_CONCEPT_HINT_LIMIT)
+        .map((c) => ({ slug: c.slug, name: c.name }));
+
+    const userPrompt = compileUserPrompt(sourceTitle, representativeChunks, knownConcepts);
     const tokensUsed = Math.ceil(userPrompt.length / 4);
 
     const response = await chatJson<CompileResponse>(
@@ -132,16 +154,53 @@ export async function compileSource(
         }
     }
 
-    /** Upsert edges (only between concepts we actually have). */
-    const knownSlugs = new Set(response.concepts.map((c) => toSlug(c.slug || c.name)));
+    /**
+     * Resolve every edge endpoint against the global brain — not just this
+     * source's pass. This is what lets cross-source edges survive:
+     *
+     *   1. exact match against in-pass concepts emitted just now,
+     *   2. exact match (with alias resolution) against any concept in the DB,
+     *   3. fuzzy slug match using the same Levenshtein threshold as dedup.
+     *
+     * Without this gate, edges referencing concepts already in the brain
+     * from a prior source were silently dropped, which is exactly how the
+     * graph ended up fragmented into per-source islands.
+     */
+    const inPassSlugs = new Set(response.concepts.map((c) => toSlug(c.slug || c.name)));
+    const allBrainSlugs = allConcepts.map((c) => c.slug);
+
+    const resolveSlug = (raw: string): string | null => {
+        const slug = toSlug(raw);
+        if (!slug) return null;
+        /** (1) in-pass: emitted by THIS compile call. */
+        if (inPassSlugs.has(slug)) return slug;
+        /** (2) DB: alias-aware via getConcept. Returns canonical slug. */
+        const existing = getConcept(slug);
+        if (existing) return existing.slug;
+        /** (3) fuzzy: highest-similarity slug above the dedup threshold. */
+        let bestSlug: string | null = null;
+        let bestSim = SLUG_SIM_THRESHOLD;
+        for (const candidate of allBrainSlugs) {
+            const sim = slugSimilarity(slug, candidate);
+            if (sim > bestSim) {
+                bestSim = sim;
+                bestSlug = candidate;
+            }
+        }
+        return bestSlug;
+    };
+
     let edgesCreated = 0;
+    let edgesDropped = 0;
 
     for (const edge of response.edges) {
-        const fromSlug = toSlug(edge.from);
-        const toSlug_ = toSlug(edge.to);
+        const fromSlug = resolveSlug(edge.from);
+        const toSlug_ = resolveSlug(edge.to);
 
-        if (!fromSlug || !toSlug_ || fromSlug === toSlug_) continue;
-        if (!knownSlugs.has(fromSlug) || !knownSlugs.has(toSlug_)) continue;
+        if (!fromSlug || !toSlug_ || fromSlug === toSlug_) {
+            edgesDropped++;
+            continue;
+        }
 
         const relation = VALID_RELATIONS.has(edge.relation)
             ? (edge.relation as RelationType)
@@ -165,6 +224,7 @@ export async function compileSource(
         concepts_created: conceptsCreated.length,
         concepts_updated: conceptsUpdated.length,
         edges_created: edgesCreated,
+        edges_dropped: edgesDropped,
         tokens_used: tokensUsed,
     });
 
