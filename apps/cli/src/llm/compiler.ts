@@ -176,7 +176,9 @@ export async function compileSource(
         if (inPassSlugs.has(slug)) return slug;
         /** (2) DB: alias-aware via getConcept. Returns canonical slug. */
         const existing = getConcept(slug);
-        if (existing) return existing.slug;
+        if (existing) {
+            return existing.retired_at === null ? existing.slug : null;
+        }
         /** (3) fuzzy: highest-similarity slug above the dedup threshold. */
         let bestSlug: string | null = null;
         let bestSim = SLUG_SIM_THRESHOLD;
