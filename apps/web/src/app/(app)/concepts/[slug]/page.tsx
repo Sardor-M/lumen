@@ -160,7 +160,7 @@ export default async function ConceptDetailPage({ params }: { params: Promise<{ 
                         </p>
                     </CardHeader>
                     <CardContent className="min-w-0">
-                        <p className="text-foreground/85 border-l-foreground/20 border-l-2 pl-3 text-sm leading-relaxed break-words italic">
+                        <p className="text-foreground/85 border-l-foreground/20 border-l-2 pl-3 text-sm leading-relaxed break-words">
                             {c.compiled_truth}
                         </p>
                     </CardContent>
