@@ -382,7 +382,7 @@ export default async function ConceptDetailPage({ params }: { params: Promise<{ 
                     </CardHeader>
                     <CardContent className="min-w-0">
                         <ul className="space-y-2">
-                            {c.backlinks.map((link) => (
+                            {c.backlinks.slice(0, 10).map((link) => (
                                 <li key={link.id} className="min-w-0">
                                     <Link
                                         href={`/concepts/${link.from_slug}`}
