@@ -188,6 +188,11 @@ export async function compileSource(
         let bestSlug: string | null = null;
         let bestSim = SLUG_SIM_THRESHOLD;
         for (const candidate of allBrainSlugs) {
+            /** Skip candidates whose length delta alone makes it impossible to beat bestSim. */
+            const longest = Math.max(slug.length, candidate.length);
+            if (Math.abs(slug.length - candidate.length) >= longest * (1 - bestSim)) {
+                continue;
+            }
             const sim = slugSimilarity(slug, candidate);
             if (sim > bestSim) {
                 bestSim = sim;
