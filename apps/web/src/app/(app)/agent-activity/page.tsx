@@ -27,8 +27,8 @@ export default function AgentActivityPage() {
                 </p>
             </div>
 
-            <SavingsCard window="7-day" data={savings7} totalCalls={totalCalls} />
-            <SavingsCard window="30-day" data={savings30} totalCalls={totalCalls} compact />
+            <SavingsCard window="7-day" data={savings7} />
+            <SavingsCard window="30-day" data={savings30} compact />
 
             <div className="grid gap-4 lg:grid-cols-3">
                 <RecentActivityCard queries={queries} />
@@ -43,12 +43,10 @@ export default function AgentActivityPage() {
 function SavingsCard({
     window,
     data,
-    totalCalls,
     compact,
 }: {
     window: string;
     data: ReturnType<typeof savings>;
-    totalCalls: number;
     compact?: boolean;
 }) {
     const hitPct = Math.round(data.hit_rate * 100);
@@ -67,14 +65,15 @@ function SavingsCard({
                     'grid gap-4 ' + (compact ? 'sm:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-4')
                 }
             >
-                {!compact && (
-                    <SavingsStat
-                        icon={Activity}
-                        label="Tool calls"
-                        value={totalCalls.toLocaleString()}
-                        description={`${data.total_sessions} sessions ${window}`}
-                    />
-                )}
+                <SavingsStat
+                    icon={Activity}
+                    label="Sessions"
+                    value={data.total_sessions.toLocaleString()}
+                    description={
+                        data.total_sessions === 0 ? 'no activity logged' : `${window} window`
+                    }
+                    compact={compact}
+                />
                 <SavingsStat
                     icon={Sparkles}
                     label="Skill hit rate"
@@ -99,15 +98,6 @@ function SavingsCard({
                     tone={data.estimated_savings_usd > 0 ? 'good' : undefined}
                     compact={compact}
                 />
-                {compact && (
-                    <SavingsStat
-                        icon={Activity}
-                        label="Sessions"
-                        value={data.total_sessions.toLocaleString()}
-                        description={`${data.total_sessions === 0 ? 'no activity' : 'logged'}`}
-                        compact
-                    />
-                )}
             </CardContent>
         </Card>
     );
@@ -296,4 +286,3 @@ function ToolBreakdownCard({ tools, total }: { tools: Record<string, number>; to
         </Card>
     );
 }
-
