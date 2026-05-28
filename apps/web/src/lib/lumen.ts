@@ -164,14 +164,14 @@ export const concept = cache((slug: string) => {
     if (!c) return null;
     return {
         ...c,
-        neighborhood: neighborhood(slug, 1),
-        outgoing: getEdgesFrom(slug),
-        incoming: getEdgesTo(slug),
-        sources: getSourcesForConcept(slug),
-        feedback: listFeedback(slug, 10),
-        feedback_net: feedbackTotal(slug),
-        outbound_links: getLinksFrom(slug),
-        backlinks: getBackLinks(slug),
+        neighborhood: neighborhood(c.slug, 1),
+        outgoing: getEdgesFrom(c.slug),
+        incoming: getEdgesTo(c.slug),
+        sources: getSourcesForConcept(c.slug),
+        feedback: listFeedback(c.slug, 10),
+        feedback_net: feedbackTotal(c.slug),
+        outbound_links: getLinksFrom(c.slug),
+        backlinks: getBackLinks(c.slug),
     };
 });
 

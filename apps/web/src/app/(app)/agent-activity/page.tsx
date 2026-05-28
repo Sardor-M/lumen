@@ -207,7 +207,7 @@ function RecentActivityCard({ queries }: { queries: ReturnType<typeof recentActi
 }
 
 function HotTopicsCard({ topics }: { topics: ReturnType<typeof hotTopics> }) {
-    const max = topics[0]?.count ?? 1;
+    const max = topics.reduce((m, t) => Math.max(m, t.count), 1);
     return (
         <Card className="min-w-0">
             <CardHeader className="pb-3">
