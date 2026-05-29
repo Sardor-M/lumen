@@ -249,6 +249,7 @@ export type CompilationResult = {
     concepts_created: string[];
     concepts_updated: string[];
     edges_created: number;
+    edges_dropped: number;
     tokens_used: number;
 };
 

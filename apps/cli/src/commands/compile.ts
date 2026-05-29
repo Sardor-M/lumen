@@ -60,6 +60,7 @@ export function registerCompile(program: Command): void {
 
                     let totalConcepts = 0;
                     let totalEdges = 0;
+                    let totalDropped = 0;
                     let totalTokens = 0;
 
                     /** Process sources via pre-partitioned index — each worker
@@ -75,10 +76,14 @@ export function registerCompile(program: Command): void {
                                 totalConcepts +=
                                     result.concepts_created.length + result.concepts_updated.length;
                                 totalEdges += result.edges_created;
+                                totalDropped += result.edges_dropped;
                                 totalTokens += result.tokens_used;
 
                                 log.success(
-                                    `  +${result.concepts_created.length} concepts, ~${result.concepts_updated.length} updated, ${result.edges_created} edges`,
+                                    `  +${result.concepts_created.length} concepts, ~${result.concepts_updated.length} updated, ${result.edges_created} edges` +
+                                        (result.edges_dropped > 0
+                                            ? ` (${result.edges_dropped} dropped)`
+                                            : ''),
                                 );
                             } catch (err) {
                                 log.error(`  Failed: ${err instanceof Error ? err.message : err}`);
@@ -88,12 +93,12 @@ export function registerCompile(program: Command): void {
 
                     await Promise.all(workers);
 
-                    console.log();
                     log.heading('Compilation Summary');
                     log.table({
                         Sources: sources.length,
                         Concepts: totalConcepts,
                         Edges: totalEdges,
+                        ...(totalDropped > 0 ? { 'Edges dropped': totalDropped } : {}),
                         'Est. tokens': totalTokens,
                     });
 

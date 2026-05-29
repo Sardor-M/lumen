@@ -17,7 +17,9 @@ import { slugSimilarity } from '../dedup/similarity.js';
 import { SLUG_SIM_THRESHOLD } from '../dedup/policy.js';
 import { toSlug } from '../utils/slug.js';
 import { audit } from '../utils/logger.js';
-import type { LumenConfig, CompilationResult, RelationType } from '../types/index.js';
+import { getDb } from '../store/database.js';
+import type { LumenConfig, CompilationResult, RelationType, ScopeKind } from '../types/index.js';
+import { DEFAULT_SCOPE_KIND, DEFAULT_SCOPE_KEY } from '../types/index.js';
 
 /**
  * How many existing concepts to surface to the LLM as a "reuse these
@@ -56,6 +58,7 @@ export async function compileSource(
             concepts_created: [],
             concepts_updated: [],
             edges_created: 0,
+            edges_dropped: 0,
             tokens_used: 0,
         };
     }
@@ -66,13 +69,24 @@ export async function compileSource(
         .slice(0, 30)
         .map((c) => ({ content: c.content, heading: c.heading }));
 
+    /** Resolve the source's scope so hints and edge resolution stay isolated. */
+    const sourceRow = getDb()
+        .prepare('SELECT scope_kind, scope_key FROM sources WHERE id = ?')
+        .get(sourceId) as { scope_kind: ScopeKind; scope_key: string } | undefined;
+    const scopeKind: ScopeKind = sourceRow?.scope_kind ?? DEFAULT_SCOPE_KIND;
+    const scopeKey: string = sourceRow?.scope_key ?? DEFAULT_SCOPE_KEY;
+
     /**
      * Surface the most-mentioned active concepts to the LLM so it can reuse
-     * their slugs instead of coining variants. Retired concepts are
-     * excluded — we don't want the LLM resurrecting them by reference.
+     * their slugs instead of coining variants. Scoped to the current source's
+     * scope — we must not leak concepts from other scopes or let the LLM
+     * reuse their slugs in the wrong scope. Retired concepts are excluded.
      */
     const allConcepts = listConcepts();
-    const knownConcepts = allConcepts
+    const scopeConcepts = allConcepts.filter(
+        (c) => c.scope_kind === scopeKind && c.scope_key === scopeKey,
+    );
+    const knownConcepts = scopeConcepts
         .filter((c) => c.retired_at === null)
         .slice(0, KNOWN_CONCEPT_HINT_LIMIT)
         .map((c) => ({ slug: c.slug, name: c.name }));
@@ -112,6 +126,8 @@ export async function compileSource(
             created_at: existing ? existing.created_at : now,
             updated_at: now,
             mention_count: 1,
+            scope_kind: scopeKind,
+            scope_key: scopeKey,
         });
 
         /**
@@ -166,10 +182,12 @@ export async function compileSource(
      * from a prior source were silently dropped, which is exactly how the
      * graph ended up fragmented into per-source islands.
      */
-    const inPassSlugs = new Set(response.concepts.map((c) => toSlug(c.slug || c.name)));
+    const inPassSlugs = new Set(
+        response.concepts.map((c) => toSlug(c.slug || c.name)).filter(Boolean) as string[],
+    );
     const allBrainSlugs = Array.from(
         new Set([
-            ...allConcepts.filter((c) => c.retired_at === null).map((c) => c.slug),
+            ...scopeConcepts.filter((c) => c.retired_at === null).map((c) => c.slug),
             ...inPassSlugs,
         ]),
     );
@@ -179,9 +197,9 @@ export async function compileSource(
         if (!slug) return null;
         /** (1) in-pass: emitted by THIS compile call. */
         if (inPassSlugs.has(slug)) return slug;
-        /** (2) DB: alias-aware via getConcept. Returns canonical slug. */
+        /** (2) DB: alias-aware via getConcept. Verify scope before accepting. */
         const existing = getConcept(slug);
-        if (existing) {
+        if (existing && existing.scope_kind === scopeKind && existing.scope_key === scopeKey) {
             return existing.retired_at === null ? existing.slug : null;
         }
         /** (3) fuzzy: highest-similarity slug above the dedup threshold. */
@@ -209,8 +227,12 @@ export async function compileSource(
         const fromSlug = resolveSlug(edge.from);
         const toSlug_ = resolveSlug(edge.to);
 
-        if (!fromSlug || !toSlug_ || fromSlug === toSlug_) {
+        if (!fromSlug || !toSlug_) {
             edgesDropped++;
+            continue;
+        }
+        /** Self-loops are structurally invalid — skip silently, not a resolution failure. */
+        if (fromSlug === toSlug_) {
             continue;
         }
 
@@ -245,6 +267,7 @@ export async function compileSource(
         concepts_created: conceptsCreated,
         concepts_updated: conceptsUpdated,
         edges_created: edgesCreated,
+        edges_dropped: edgesDropped,
         tokens_used: tokensUsed,
     };
 }
