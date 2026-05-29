@@ -8,10 +8,9 @@ import {
     appendTimeline,
     updateCompiledTruth,
     linkSourceConcept,
-    listConcepts,
 } from '../store/concepts.js';
 import { upsertEdge } from '../store/edges.js';
-import { markCompiled } from '../store/sources.js';
+import { markCompiled, getSource } from '../store/sources.js';
 import { autoLinkFromCompiledTruth } from '../store/links.js';
 import { slugSimilarity } from '../dedup/similarity.js';
 import { SLUG_SIM_THRESHOLD } from '../dedup/policy.js';
@@ -25,7 +24,7 @@ import { DEFAULT_SCOPE_KIND, DEFAULT_SCOPE_KEY } from '../types/index.js';
  * How many existing concepts to surface to the LLM as a "reuse these
  * slugs" hint. 80 keeps the prompt overhead well under 2k tokens (each
  * entry is ~25 chars on average) while covering the high-PageRank core
- * of the brain. Ordered by mention_count DESC via `listConcepts`.
+ * of the brain. Ordered by mention_count DESC.
  */
 const KNOWN_CONCEPT_HINT_LIMIT = 80;
 
@@ -69,27 +68,27 @@ export async function compileSource(
         .slice(0, 30)
         .map((c) => ({ content: c.content, heading: c.heading }));
 
-    /** Resolve the source's scope so hints and edge resolution stay isolated. */
-    const sourceRow = getDb()
-        .prepare('SELECT scope_kind, scope_key FROM sources WHERE id = ?')
-        .get(sourceId) as { scope_kind: ScopeKind; scope_key: string } | undefined;
+    /** Use the store layer for scope lookup — keeps DB access out of the compiler. */
+    const sourceRow = getSource(sourceId);
     const scopeKind: ScopeKind = sourceRow?.scope_kind ?? DEFAULT_SCOPE_KIND;
     const scopeKey: string = sourceRow?.scope_key ?? DEFAULT_SCOPE_KEY;
 
+    const db = getDb();
+
     /**
-     * Surface the most-mentioned active concepts to the LLM so it can reuse
-     * their slugs instead of coining variants. Scoped to the current source's
-     * scope — we must not leak concepts from other scopes or let the LLM
-     * reuse their slugs in the wrong scope. Retired concepts are excluded.
+     * Slim scoped query — only slug + name, only active, ordered by
+     * mention_count DESC. Avoids materializing heavy columns (compiled_truth,
+     * timeline, article) for every source compile. Scoped to prevent concept
+     * hints from leaking across scopes.
      */
-    const allConcepts = listConcepts();
-    const scopeConcepts = allConcepts.filter(
-        (c) => c.scope_kind === scopeKind && c.scope_key === scopeKey,
-    );
-    const knownConcepts = scopeConcepts
-        .filter((c) => c.retired_at === null)
-        .slice(0, KNOWN_CONCEPT_HINT_LIMIT)
-        .map((c) => ({ slug: c.slug, name: c.name }));
+    const knownConcepts = db
+        .prepare(
+            `SELECT slug, name FROM concepts
+             WHERE scope_kind = ? AND scope_key = ? AND retired_at IS NULL
+             ORDER BY mention_count DESC
+             LIMIT ?`,
+        )
+        .all(scopeKind, scopeKey, KNOWN_CONCEPT_HINT_LIMIT) as { slug: string; name: string }[];
 
     const userPrompt = compileUserPrompt(sourceTitle, representativeChunks, knownConcepts);
     const tokensUsed = Math.ceil(userPrompt.length / 4);
@@ -185,12 +184,16 @@ export async function compileSource(
     const inPassSlugs = new Set(
         response.concepts.map((c) => toSlug(c.slug || c.name)).filter(Boolean) as string[],
     );
-    const allBrainSlugs = Array.from(
-        new Set([
-            ...scopeConcepts.filter((c) => c.retired_at === null).map((c) => c.slug),
-            ...inPassSlugs,
-        ]),
-    );
+    /** Slug-only query for the fuzzy resolution pool — avoids re-fetching heavy columns. */
+    const dbSlugs = (
+        db
+            .prepare(
+                `SELECT slug FROM concepts
+                 WHERE scope_kind = ? AND scope_key = ? AND retired_at IS NULL`,
+            )
+            .all(scopeKind, scopeKey) as { slug: string }[]
+    ).map((r) => r.slug);
+    const allBrainSlugs = Array.from(new Set([...dbSlugs, ...inPassSlugs]));
 
     const resolveSlug = (raw: string): string | null => {
         const slug = toSlug(raw);

@@ -113,7 +113,7 @@ export function compileUserPrompt(
     return [
         `Source: "${title}"`,
         `Chunks: ${chunks.length}`,
-        knownBlock,
+        ...(knownBlock ? [knownBlock] : []),
         '',
         chunkText,
         '',

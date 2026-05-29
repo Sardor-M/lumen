@@ -126,6 +126,7 @@ export function registerCompile(program: Command): void {
                         sources: sources.length,
                         concepts: totalConcepts,
                         edges: totalEdges,
+                        edges_dropped: totalDropped,
                         tokens: totalTokens,
                     });
                 } catch (err) {
