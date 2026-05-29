@@ -166,14 +166,30 @@ systemctl --user stop  lumen-sync.timer
 systemctl --user start lumen-sync.timer
 ```
 
-### Out of scope (Tier 6 / 0.3.0)
+### Layer 3 — managed sync daemon (v0.3.0)
 
-A first-class `lumen sync daemon install` subcommand that detects platform, generates the unit file, and handles install/uninstall/status without manual editing — that's coming in 0.3.0. For now, the templates + manual edit are the path of least resistance.
+As of v0.3.0 you no longer need to hand-edit the templates above. A
+first-class managed daemon detects your platform, generates and loads the
+unit file, and handles its own lifecycle:
+
+```bash
+lumen sync daemon install      # generate + load the launchd plist / systemd unit
+lumen sync daemon status       # installed? managed vs. manual shape? PID alive?
+lumen sync daemon uninstall    # bootout/disable + remove the unit and PID file
+```
+
+The daemon adapts its cadence automatically — Active (~30s) when there's
+pending push work or recent pulls returned rows, Idle (~300s) after a few
+empty pulls — and debounces bursts of journal writes (e.g. during a long
+`lumen compile`) into a single push. If you previously copied the manual
+PR #27 templates, `lumen sync daemon install --replace-manual` detects that
+shape (`StartInterval` / `Type=oneshot`), unloads it, and installs the
+managed daemon in its place. The Layer 2 manual templates remain supported.
 
 ## How it works
 
 1. **Ingest** — extract content from any source (articles, papers, video transcripts, code repos, datasets, images, Obsidian clippings), chunk structurally, deduplicate via SHA-256, index with FTS5
-2. **Compile** — LLM extracts concepts + weighted edges, builds compiled truth + timeline per concept
+2. **Compile** — LLM extracts concepts + weighted edges, builds compiled truth + timeline per concept. The compiler surfaces the brain's most-mentioned concepts as a "reuse these slugs" hint and resolves every edge endpoint against the whole graph (exact → alias-aware → fuzzy), so new sources connect into the existing graph instead of forming isolated islands
 3. **Search** — BM25 + TF-IDF + vector ANN fused via Reciprocal Rank Fusion, budget-cut by relevance density
 4. **Enrich** — concepts auto-escalate from stub (Tier 3) to full knowledge page (Tier 1) as evidence grows
 5. **Agent loop** — `brain_ops` checks the KB before answering, `capture` persists new ideas after responding

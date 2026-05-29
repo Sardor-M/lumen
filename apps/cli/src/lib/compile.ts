@@ -30,6 +30,7 @@ export type CompileResult = {
     concepts_created: number;
     concepts_updated: number;
     edges_created: number;
+    edges_dropped: number;
     tokens_used: number;
     /** Absolute path of the generated report if `writeReport` was true. */
     report_path: string | null;
@@ -61,6 +62,7 @@ export async function compile(opts: CompileOptions = {}): Promise<CompileResult>
     let totalCreated = 0;
     let totalUpdated = 0;
     let totalEdges = 0;
+    let totalDropped = 0;
     let totalTokens = 0;
 
     /** Batch the whole compile loop so profile invalidation fires once,
@@ -81,6 +83,7 @@ export async function compile(opts: CompileOptions = {}): Promise<CompileResult>
                     totalCreated += result.concepts_created.length;
                     totalUpdated += result.concepts_updated.length;
                     totalEdges += result.edges_created;
+                    totalDropped += result.edges_dropped;
                     totalTokens += result.tokens_used;
                 } catch (err) {
                     outcomes.push({
@@ -114,6 +117,7 @@ export async function compile(opts: CompileOptions = {}): Promise<CompileResult>
         concepts_created: totalCreated,
         concepts_updated: totalUpdated,
         edges_created: totalEdges,
+        edges_dropped: totalDropped,
         tokens_used: totalTokens,
         report_path: reportPath,
         outcomes,

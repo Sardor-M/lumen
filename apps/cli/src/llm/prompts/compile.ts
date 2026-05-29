@@ -48,11 +48,12 @@ Return a single JSON object with exactly two keys:
 - **timeline_event**: one concise sentence describing what THIS specific source contributes to understanding this concept (e.g. "Introduced transformer architecture as a replacement for RNN-based models"). This is appended to the concept's immutable evidence trail.
 - Prefer **specific** over generic: "multi-head-attention" over "neural-networks", "adam-optimizer" over "optimization".
 - Prefer **canonical names**: use the established term ("backpropagation" not "backward-pass", "dropout" not "dropping-neurons").
+- **Reuse existing slugs when applicable.** If the user prompt lists concepts already in the brain, and a chunk references the same idea (even under a slightly different name), use the existing slug verbatim — do NOT coin a new one. This is what keeps the graph connected across sources.
 - Do NOT extract: section headings, author names, publication venues, or meta-information about the article itself.
 
 ## Edge Rules
 
-- **from** and **to** must be slugs of concepts you extracted above. Do not reference concepts outside your list.
+- **from** and **to** may be either (a) slugs of concepts you extracted above, OR (b) slugs of concepts already in the brain (listed in the user prompt). Cross-source edges are encouraged — they're what turns a collection of subgraphs into one connected brain.
 - **relation** must be exactly one of: ${RELATIONS.join(', ')}.
 - **weight**: 0.0-1.0 indicating strength. Use 0.9-1.0 for definitional relationships ("transformer implements self-attention"), 0.5-0.8 for contextual relationships ("dropout supports regularization"), 0.1-0.4 for weak associations.
 - Be **conservative**: only add edges you can justify from the text. An article mentioning two concepts in the same paragraph is NOT enough — there must be a stated or clearly implied relationship.
@@ -79,9 +80,17 @@ Return a single JSON object with exactly two keys:
 - If a chunk is too short or uninformative, extract fewer concepts. Zero is acceptable.
 - UTF-8 safe. Slugs must be ASCII only (a-z, 0-9, hyphens).`;
 
+/**
+ * `knownConcepts` is the (capped, scope-aware) list of concepts already in
+ * the brain. Inlining them as a "reuse these slugs if applicable" block is
+ * the single highest-impact change for graph connectivity — without it,
+ * each compile pass coins fresh slugs in isolation and cross-source edges
+ * only form by coincidence.
+ */
 export function compileUserPrompt(
     title: string,
     chunks: { content: string; heading: string | null }[],
+    knownConcepts: { slug: string; name: string }[] = [],
 ): string {
     const chunkText = chunks
         .map((c, i) => {
@@ -90,9 +99,21 @@ export function compileUserPrompt(
         })
         .join('\n\n');
 
+    const knownBlock =
+        knownConcepts.length > 0
+            ? [
+                  '',
+                  `Existing concepts in the brain (REUSE these slugs verbatim when a chunk references the same idea — do not coin variants):`,
+                  knownConcepts.map((c) => `  - ${c.slug} (${c.name})`).join('\n'),
+                  '',
+                  'You may also create cross-source edges that reference these existing slugs in `from`/`to`, even when you do not re-emit the concept itself.',
+              ].join('\n')
+            : '';
+
     return [
         `Source: "${title}"`,
         `Chunks: ${chunks.length}`,
+        ...(knownBlock ? [knownBlock] : []),
         '',
         chunkText,
         '',

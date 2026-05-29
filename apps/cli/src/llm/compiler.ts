@@ -10,11 +10,23 @@ import {
     linkSourceConcept,
 } from '../store/concepts.js';
 import { upsertEdge } from '../store/edges.js';
-import { markCompiled } from '../store/sources.js';
+import { markCompiled, getSource } from '../store/sources.js';
 import { autoLinkFromCompiledTruth } from '../store/links.js';
+import { slugSimilarity } from '../dedup/similarity.js';
+import { SLUG_SIM_THRESHOLD } from '../dedup/policy.js';
 import { toSlug } from '../utils/slug.js';
 import { audit } from '../utils/logger.js';
-import type { LumenConfig, CompilationResult, RelationType } from '../types/index.js';
+import { getDb } from '../store/database.js';
+import type { LumenConfig, CompilationResult, RelationType, ScopeKind } from '../types/index.js';
+import { DEFAULT_SCOPE_KIND, DEFAULT_SCOPE_KEY } from '../types/index.js';
+
+/**
+ * How many existing concepts to surface to the LLM as a "reuse these
+ * slugs" hint. 80 keeps the prompt overhead well under 2k tokens (each
+ * entry is ~25 chars on average) while covering the high-PageRank core
+ * of the brain. Ordered by mention_count DESC.
+ */
+const KNOWN_CONCEPT_HINT_LIMIT = 80;
 
 const VALID_RELATIONS: Set<string> = new Set([
     'implements',
@@ -45,6 +57,7 @@ export async function compileSource(
             concepts_created: [],
             concepts_updated: [],
             edges_created: 0,
+            edges_dropped: 0,
             tokens_used: 0,
         };
     }
@@ -55,7 +68,29 @@ export async function compileSource(
         .slice(0, 30)
         .map((c) => ({ content: c.content, heading: c.heading }));
 
-    const userPrompt = compileUserPrompt(sourceTitle, representativeChunks);
+    /** Use the store layer for scope lookup — keeps DB access out of the compiler. */
+    const sourceRow = getSource(sourceId);
+    const scopeKind: ScopeKind = sourceRow?.scope_kind ?? DEFAULT_SCOPE_KIND;
+    const scopeKey: string = sourceRow?.scope_key ?? DEFAULT_SCOPE_KEY;
+
+    const db = getDb();
+
+    /**
+     * Slim scoped query — only slug + name, only active, ordered by
+     * mention_count DESC. Avoids materializing heavy columns (compiled_truth,
+     * timeline, article) for every source compile. Scoped to prevent concept
+     * hints from leaking across scopes.
+     */
+    const knownConcepts = db
+        .prepare(
+            `SELECT slug, name FROM concepts
+             WHERE scope_kind = ? AND scope_key = ? AND retired_at IS NULL
+             ORDER BY mention_count DESC
+             LIMIT ?`,
+        )
+        .all(scopeKind, scopeKey, KNOWN_CONCEPT_HINT_LIMIT) as { slug: string; name: string }[];
+
+    const userPrompt = compileUserPrompt(sourceTitle, representativeChunks, knownConcepts);
     const tokensUsed = Math.ceil(userPrompt.length / 4);
 
     const response = await chatJson<CompileResponse>(
@@ -73,12 +108,31 @@ export async function compileSource(
     const conceptsCreated: string[] = [];
     const conceptsUpdated: string[] = [];
 
+    /**
+     * Populated during the upsert loop below — only slugs that were actually
+     * written into THIS scope. Cross-scope slug collisions are skipped (see
+     * guard below), so they never enter the edge-resolution pool.
+     */
+    const inPassSlugs = new Set<string>();
+
     /** Upsert concepts with compiled_truth + timeline. */
     for (const concept of response.concepts) {
         const slug = toSlug(concept.slug || concept.name);
         if (!slug) continue;
 
         const existing = getConcept(slug);
+
+        /**
+         * Cross-scope guard: if a concept with this slug already exists but
+         * belongs to a different scope, skip the upsert entirely. The ON
+         * CONFLICT path in upsertConcept would otherwise overwrite the other
+         * scope's compiled_truth / summary / mention_count without updating
+         * scope_kind / scope_key, silently mixing scope data.
+         */
+        if (existing && (existing.scope_kind !== scopeKind || existing.scope_key !== scopeKey)) {
+            continue;
+        }
+
         const compiledTruth = concept.compiled_truth || null;
 
         upsertConcept({
@@ -90,6 +144,8 @@ export async function compileSource(
             created_at: existing ? existing.created_at : now,
             updated_at: now,
             mention_count: 1,
+            scope_kind: scopeKind,
+            scope_key: scopeKey,
         });
 
         /**
@@ -118,30 +174,90 @@ export async function compileSource(
         } else {
             conceptsCreated.push(slug);
         }
+
+        inPassSlugs.add(slug);
     }
 
     /**
      * Auto-link concepts whose compiled_truth mentions other known concepts.
-     * Run after all concepts are upserted so every slug in this source is available.
+     * Run after all concepts are upserted so every slug in this source is
+     * available. Guard with inPassSlugs so we only auto-link concepts that
+     * were actually written into this scope.
      */
     for (const concept of response.concepts) {
         const slug = toSlug(concept.slug || concept.name);
         const truth = concept.compiled_truth;
-        if (slug && truth) {
+        if (slug && truth && inPassSlugs.has(slug)) {
             autoLinkFromCompiledTruth(slug, truth, sourceId);
         }
     }
 
-    /** Upsert edges (only between concepts we actually have). */
-    const knownSlugs = new Set(response.concepts.map((c) => toSlug(c.slug || c.name)));
+    /**
+     * Resolve every edge endpoint against the global brain — not just this
+     * source's pass. This is what lets cross-source edges survive:
+     *
+     *   1. exact match against in-pass concepts emitted just now,
+     *   2. exact match (with alias resolution) against any concept in the DB,
+     *   3. fuzzy slug match using the same Levenshtein threshold as dedup.
+     *
+     * Without this gate, edges referencing concepts already in the brain
+     * from a prior source were silently dropped, which is exactly how the
+     * graph ended up fragmented into per-source islands.
+     */
+    /** Slug-only query for the fuzzy resolution pool — avoids re-fetching heavy columns. */
+    const dbSlugs = (
+        db
+            .prepare(
+                `SELECT slug FROM concepts
+                 WHERE scope_kind = ? AND scope_key = ? AND retired_at IS NULL`,
+            )
+            .all(scopeKind, scopeKey) as { slug: string }[]
+    ).map((r) => r.slug);
+    const allBrainSlugs = Array.from(new Set([...dbSlugs, ...inPassSlugs]));
+
+    const resolveSlug = (raw: string): string | null => {
+        const slug = toSlug(raw);
+        if (!slug) return null;
+        /** (1) in-pass: emitted by THIS compile call. */
+        if (inPassSlugs.has(slug)) return slug;
+        /** (2) DB: alias-aware via getConcept. Verify scope before accepting. */
+        const existing = getConcept(slug);
+        if (existing && existing.scope_kind === scopeKind && existing.scope_key === scopeKey) {
+            return existing.retired_at === null ? existing.slug : null;
+        }
+        /** (3) fuzzy: highest-similarity slug above the dedup threshold. */
+        let bestSlug: string | null = null;
+        let bestSim = SLUG_SIM_THRESHOLD;
+        for (const candidate of allBrainSlugs) {
+            /** Skip candidates whose length delta alone makes it impossible to beat bestSim. */
+            const longest = Math.max(slug.length, candidate.length);
+            if (Math.abs(slug.length - candidate.length) >= longest * (1 - bestSim)) {
+                continue;
+            }
+            const sim = slugSimilarity(slug, candidate);
+            if (sim > bestSim) {
+                bestSim = sim;
+                bestSlug = candidate;
+            }
+        }
+        return bestSlug;
+    };
+
     let edgesCreated = 0;
+    let edgesDropped = 0;
 
     for (const edge of response.edges) {
-        const fromSlug = toSlug(edge.from);
-        const toSlug_ = toSlug(edge.to);
+        const fromSlug = resolveSlug(edge.from);
+        const toSlug_ = resolveSlug(edge.to);
 
-        if (!fromSlug || !toSlug_ || fromSlug === toSlug_) continue;
-        if (!knownSlugs.has(fromSlug) || !knownSlugs.has(toSlug_)) continue;
+        if (!fromSlug || !toSlug_) {
+            edgesDropped++;
+            continue;
+        }
+        /** Self-loops are structurally invalid — skip silently, not a resolution failure. */
+        if (fromSlug === toSlug_) {
+            continue;
+        }
 
         const relation = VALID_RELATIONS.has(edge.relation)
             ? (edge.relation as RelationType)
@@ -165,6 +281,7 @@ export async function compileSource(
         concepts_created: conceptsCreated.length,
         concepts_updated: conceptsUpdated.length,
         edges_created: edgesCreated,
+        edges_dropped: edgesDropped,
         tokens_used: tokensUsed,
     });
 
@@ -173,6 +290,7 @@ export async function compileSource(
         concepts_created: conceptsCreated,
         concepts_updated: conceptsUpdated,
         edges_created: edgesCreated,
+        edges_dropped: edgesDropped,
         tokens_used: tokensUsed,
     };
 }
