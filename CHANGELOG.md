@@ -2,7 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-05-29
+
+### Added — Connect the graph across sources (#52)
+
+The compiler now keeps the knowledge graph connected as new sources land,
+instead of letting each `compile` pass coin slugs in isolation and form
+cross-source edges only by coincidence.
+
+- **Known-concepts hint.** Before compiling a source, the most-mentioned
+  active concepts (up to `KNOWN_CONCEPT_HINT_LIMIT` = 80, ordered by
+  mention count, retired concepts excluded) are inlined into the LLM prompt
+  as a "reuse these slugs verbatim when a chunk references the same idea"
+  block. This is the single highest-impact change for connectivity — without
+  it, every pass invents fresh slugs and the graph fragments into per-source
+  islands. Prompt overhead stays under ~2k tokens.
+- **Global edge resolver.** Every edge endpoint is now resolved against the
+  whole brain, not just the concepts emitted in the current pass:
+  (1) exact match against in-pass concepts, (2) alias-aware exact match
+  against any concept in the DB (canonicalized via `getConcept`, retired
+  concepts rejected), then (3) fuzzy slug match using the same Levenshtein
+  threshold as dedup (`SLUG_SIM_THRESHOLD`), with a length pre-filter to skip
+  candidates that can't beat the current best. Previously, edges referencing
+  concepts already in the brain from a prior source were silently dropped —
+  exactly how the graph ended up fragmented.
+- **`edges_dropped`** is now reported in the compilation result alongside
+  `edges_created`, surfacing how many endpoints failed to resolve.
 
 ### Added — Tier 6 sync daemon (#26, #28, #29)
 
