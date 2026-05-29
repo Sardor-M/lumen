@@ -108,12 +108,31 @@ export async function compileSource(
     const conceptsCreated: string[] = [];
     const conceptsUpdated: string[] = [];
 
+    /**
+     * Populated during the upsert loop below — only slugs that were actually
+     * written into THIS scope. Cross-scope slug collisions are skipped (see
+     * guard below), so they never enter the edge-resolution pool.
+     */
+    const inPassSlugs = new Set<string>();
+
     /** Upsert concepts with compiled_truth + timeline. */
     for (const concept of response.concepts) {
         const slug = toSlug(concept.slug || concept.name);
         if (!slug) continue;
 
         const existing = getConcept(slug);
+
+        /**
+         * Cross-scope guard: if a concept with this slug already exists but
+         * belongs to a different scope, skip the upsert entirely. The ON
+         * CONFLICT path in upsertConcept would otherwise overwrite the other
+         * scope's compiled_truth / summary / mention_count without updating
+         * scope_kind / scope_key, silently mixing scope data.
+         */
+        if (existing && (existing.scope_kind !== scopeKind || existing.scope_key !== scopeKey)) {
+            continue;
+        }
+
         const compiledTruth = concept.compiled_truth || null;
 
         upsertConcept({
@@ -155,16 +174,20 @@ export async function compileSource(
         } else {
             conceptsCreated.push(slug);
         }
+
+        inPassSlugs.add(slug);
     }
 
     /**
      * Auto-link concepts whose compiled_truth mentions other known concepts.
-     * Run after all concepts are upserted so every slug in this source is available.
+     * Run after all concepts are upserted so every slug in this source is
+     * available. Guard with inPassSlugs so we only auto-link concepts that
+     * were actually written into this scope.
      */
     for (const concept of response.concepts) {
         const slug = toSlug(concept.slug || concept.name);
         const truth = concept.compiled_truth;
-        if (slug && truth) {
+        if (slug && truth && inPassSlugs.has(slug)) {
             autoLinkFromCompiledTruth(slug, truth, sourceId);
         }
     }
@@ -181,9 +204,6 @@ export async function compileSource(
      * from a prior source were silently dropped, which is exactly how the
      * graph ended up fragmented into per-source islands.
      */
-    const inPassSlugs = new Set(
-        response.concepts.map((c) => toSlug(c.slug || c.name)).filter(Boolean) as string[],
-    );
     /** Slug-only query for the fuzzy resolution pool — avoids re-fetching heavy columns. */
     const dbSlugs = (
         db
