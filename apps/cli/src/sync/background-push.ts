@@ -88,8 +88,16 @@ async function drainPushes(deps: BackgroundPushDeps): Promise<void> {
                 onError(err instanceof Error ? err.message : String(err));
             }
         } while (rePushQueued);
+    } catch (err) {
+        /** Guard: `onError` itself threw; swallow to keep the process stable. */
+        try {
+            onError(err instanceof Error ? err.message : String(err));
+        } catch {
+            /** Double-fault — cannot report without risking recursion, drop it. */
+        }
     } finally {
         pushInFlight = false;
+        drainPromise = null;
     }
 }
 
