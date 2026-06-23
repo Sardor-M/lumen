@@ -63,7 +63,8 @@ export function scheduleBackgroundPush(deps: BackgroundPushDeps = {}): void {
     }
 
     pushInFlight = true;
-    drainPromise = drainPushes(deps);
+    /** Defer via microtask so this function returns before any sync work starts. */
+    drainPromise = Promise.resolve().then(() => drainPushes(deps));
     /** Detached — never awaited by the caller. */
     void drainPromise;
 }
