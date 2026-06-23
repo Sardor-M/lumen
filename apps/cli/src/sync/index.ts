@@ -67,11 +67,19 @@ export type { ApplyOptions, ApplyResult, ApplyFailure } from './apply.js';
 
 export {
     getOrInitSyncState,
+    isSyncEnabled,
     setEnabled,
     setRelayConfig,
     updateCursor,
     setLastError,
 } from './state.js';
+
+export {
+    scheduleBackgroundPush,
+    flushBackgroundPush,
+    resetBackgroundPushStateForTests,
+} from './background-push.js';
+export type { BackgroundPushDeps } from './background-push.js';
 
 export type {
     JournalOp,
