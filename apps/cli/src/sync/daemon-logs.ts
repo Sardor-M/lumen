@@ -150,36 +150,60 @@ export function readDaemonLog(
  * (the caller has already printed the trailing backlog) and, on each `drain`,
  * returns the complete lines appended since the previous call. An incomplete
  * trailing line is buffered until its newline arrives. Handles truncation /
- * rotation by resetting to offset 0 when the file shrinks.
+ * rotation: size-decrease detects in-place truncation; inode change detects
+ * rename-based rotation where the new file immediately exceeds the old offset.
  */
 export function createTailer(logPath: string): () => string[] {
-    const sizeOf = (): number => {
-        try {
-            return statSync(logPath).size;
-        } catch {
-            return 0;
-        }
-    };
-    let offset = sizeOf();
+    let lastIno = 0;
+    let offset = 0;
     let buffer = '';
+
+    try {
+        const stat = statSync(logPath);
+        lastIno = stat.ino;
+        offset = stat.size;
+    } catch {
+        /** File doesn't exist yet; will start from 0 when it appears. */
+    }
+
     return () => {
-        const size = sizeOf();
-        if (size < offset) {
+        let size: number;
+        let ino: number;
+        try {
+            const stat = statSync(logPath);
+            size = stat.size;
+            ino = stat.ino;
+        } catch {
+            /** File missing during rotation; skip this drain. */
+            return [];
+        }
+
+        if (ino !== lastIno || size < offset) {
             /** Truncated or rotated — restart from the top. */
             offset = 0;
             buffer = '';
         }
+        lastIno = ino;
+
         if (size <= offset) return [];
-        const fd = openSync(logPath, 'r');
+
+        let fd: number | null = null;
         try {
+            fd = openSync(logPath, 'r');
             const len = size - offset;
             const buf = Buffer.alloc(len);
-            readSync(fd, buf, 0, len, offset);
-            offset = size;
-            buffer += buf.toString('utf-8');
+            const bytesRead = readSync(fd, buf, 0, len, offset);
+            if (bytesRead > 0) {
+                buffer += buf.subarray(0, bytesRead).toString('utf-8');
+            }
+            offset += bytesRead;
+        } catch {
+            /** File may rotate between stat/open/read; retry next drain. */
+            return [];
         } finally {
-            closeSync(fd);
+            if (fd !== null) closeSync(fd);
         }
+
         const parts = buffer.split('\n');
         buffer = parts.pop() ?? '';
         return parts;
@@ -221,9 +245,8 @@ export function followDaemonLog(deps: FollowDeps): FollowHandle {
     });
 
     let stopped = false;
-    const closeWatch = deps.watch(() => {
-        for (const line of deps.drain()) deps.emit(line);
-    });
+    /** Declared before `stop` so the closure captures the variable, not a TDZ ref. */
+    let unregister: () => void = () => {};
 
     const stop = (): void => {
         if (stopped) return;
@@ -233,7 +256,11 @@ export function followDaemonLog(deps: FollowDeps): FollowHandle {
         resolveDone();
     };
 
-    const unregister = deps.onStopSignal(stop);
+    const closeWatch = deps.watch(() => {
+        for (const line of deps.drain()) deps.emit(line);
+    });
+
+    unregister = deps.onStopSignal(stop);
 
     return { stop, done };
 }
