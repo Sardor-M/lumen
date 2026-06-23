@@ -186,6 +186,25 @@ PR #27 templates, `lumen sync daemon install --replace-manual` detects that
 shape (`StartInterval` / `Type=oneshot`), unloads it, and installs the
 managed daemon in its place. The Layer 2 manual templates remain supported.
 
+#### Inspecting the daemon log
+
+When sync isn't behaving, `lumen sync daemon logs` tails the daemon's output
+without you needing to remember the platform-specific path (launchd's
+`StandardOutPath` on macOS, systemd's `append:` file on Linux — both resolve
+to the same `~/.lumen/sync-daemon.log`):
+
+```bash
+lumen sync daemon logs              # last 50 lines
+lumen sync daemon logs --follow     # stream new lines (Ctrl-C to exit)
+lumen sync daemon logs --since 1h   # only entries from the last hour (30s, 5m, 1h, 1d)
+lumen sync daemon logs --lines 200  # custom backlog size (capped at 10000)
+lumen sync daemon logs --json       # structured output for scripts
+```
+
+Same shape as `docker logs` / `kubectl logs`. `--since` filters on each
+entry's JSON `ts`; `--follow` survives log rotation and exits cleanly on
+Ctrl-C.
+
 ## How it works
 
 1. **Ingest** — extract content from any source (articles, papers, video transcripts, code repos, datasets, images, Obsidian clippings), chunk structurally, deduplicate via SHA-256, index with FTS5
