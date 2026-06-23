@@ -276,8 +276,45 @@ export function buildFollowDeps(
         emit,
         drain: createTailer(logPath),
         watch: (onChange) => {
-            const watcher = fsWatch(logPath, () => onChange());
-            return () => watcher.close();
+            let watcher: ReturnType<typeof fsWatch> | null = null;
+            let timeoutId: ReturnType<typeof setTimeout> | null = null;
+            let closed = false;
+
+            const start = (): void => {
+                if (closed) return;
+                if (watcher) {
+                    try { watcher.close(); } catch { /* ignore */ }
+                    watcher = null;
+                }
+                try {
+                    watcher = fsWatch(logPath, (eventType) => {
+                        if (eventType === 'rename') {
+                            /** File rotated — debounce watcher recreation. */
+                            if (timeoutId) clearTimeout(timeoutId);
+                            timeoutId = setTimeout(start, 100);
+                        }
+                        onChange();
+                    });
+                } catch {
+                    /** File missing during rotation; retry after a second. */
+                    if (timeoutId) clearTimeout(timeoutId);
+                    timeoutId = setTimeout(start, 1_000);
+                }
+            };
+
+            start();
+
+            return () => {
+                closed = true;
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                    timeoutId = null;
+                }
+                if (watcher) {
+                    try { watcher.close(); } catch { /* ignore */ }
+                    watcher = null;
+                }
+            };
         },
         onStopSignal: (stop) => {
             process.once('SIGINT', stop);
