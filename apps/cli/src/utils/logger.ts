@@ -45,6 +45,15 @@ export function dim(msg: string): void {
     console.log(chalk.dim(msg));
 }
 
+/**
+ * Print a line verbatim — no icon, no color, no prefix. For passthrough
+ * output like daemon log tailing or `--json` payloads, where the content
+ * is the data and any decoration would corrupt it.
+ */
+export function plain(msg: string): void {
+    console.log(msg);
+}
+
 export function heading(msg: string): void {
     console.log(chalk.bold.white(`\n${msg}`));
 }

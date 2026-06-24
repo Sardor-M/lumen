@@ -33,6 +33,16 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
     return { promise, resolve };
 }
 
+/**
+ * Yield a macrotask so the microtask-deferred drain can start its first push.
+ * `scheduleBackgroundPush` returns before any push work runs (it schedules the
+ * drain via `Promise.resolve().then(...)`), so tests that need the push to have
+ * *begun* — but not completed — await this first.
+ */
+function tick(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 beforeEach(() => {
     resetBackgroundPushStateForTests();
 });
@@ -64,7 +74,15 @@ describe('scheduleBackgroundPush — fire-and-forget', () => {
                 return emptyResult();
             },
         });
-        /** The push has begun but not completed — schedule already returned. */
+        /**
+         * The drain is deferred to a microtask, so synchronously after the
+         * call the push hasn't even started — the strongest form of "never
+         * blocks the tool response."
+         */
+        expect(started).toBe(false);
+        expect(pushCount).toBe(0);
+        /** After a tick the push has begun but is still gated (not complete). */
+        await tick();
         expect(started).toBe(true);
         expect(pushCount).toBe(0);
         gate.resolve();
@@ -151,9 +169,15 @@ describe('scheduleBackgroundPush — coalescing', () => {
             });
         }
         await flushBackgroundPush();
+        /**
+         * The guarantee is "bounded, never piles up" — at least one push fired
+         * and never more than two (one in flight + one trailing). With the
+         * microtask-deferred drain, a fully-synchronous burst actually collapses
+         * into a single push because every call lands before the drain starts;
+         * the mid-push test below exercises the in-flight + trailing = 2 path.
+         */
+        expect(pushCount).toBeGreaterThanOrEqual(1);
         expect(pushCount).toBeLessThanOrEqual(2);
-        /** One in flight + one trailing re-push for the writes that piled up. */
-        expect(pushCount).toBe(2);
     });
 
     it('collapses calls arriving mid-push into a single trailing re-push', async () => {
@@ -164,8 +188,9 @@ describe('scheduleBackgroundPush — coalescing', () => {
             if (pushCount === 1) await gate.promise;
             return emptyResult();
         };
-        /** First call starts the (gated) push. */
+        /** First call schedules the push; a tick lets the gated push begin. */
         scheduleBackgroundPush({ isSyncEnabled: () => true, runPush });
+        await tick();
         expect(pushCount).toBe(1);
         /** Five more land while the first push is blocked — they coalesce. */
         for (let i = 0; i < 5; i++) {

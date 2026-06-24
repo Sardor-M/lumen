@@ -40,6 +40,15 @@ import {
     type SyncDaemonConfig,
 } from '../sync/daemon-install.js';
 import { runSyncDaemon } from '../sync/daemon-loop.js';
+import {
+    DEFAULT_LOG_LINES,
+    MAX_LOG_LINES,
+    parseSinceDuration,
+    getDaemonLogsContext,
+    readDaemonLog,
+    followDaemonLog,
+    buildFollowDeps,
+} from '../sync/daemon-logs.js';
 import * as log from '../utils/logger.js';
 
 type InitOptions = { relay?: string };
@@ -52,6 +61,14 @@ type DaemonInstallOptions = {
     idleAfter: string;
     debounce: string;
     replaceManual?: boolean;
+};
+
+type DaemonLogsOptions = {
+    follow?: boolean;
+    since?: string;
+    /** Always present — Commander fills the option default. */
+    lines: string;
+    json?: boolean;
 };
 
 export function registerSync(program: Command): void {
@@ -434,6 +451,73 @@ function registerSyncDaemon(sync: Command): void {
             }
         });
 
+    daemon
+        .command('logs')
+        .description('Tail the sync daemon log (cross-platform — no need to know the OS log path)')
+        .option('-f, --follow', 'Stream new log lines as they are written (Ctrl-C to exit)')
+        .option('--since <duration>', 'Only show entries newer than e.g. 30s, 5m, 1h, 1d')
+        .option(
+            '-n, --lines <count>',
+            'Number of trailing lines to show',
+            String(DEFAULT_LOG_LINES),
+        )
+        .option('--json', 'Emit structured JSON instead of plain text')
+        .action(async (opts: DaemonLogsOptions) => {
+            try {
+                const lines = parseLineCount(opts.lines);
+                const sinceMs = opts.since !== undefined ? parseSinceDuration(opts.since) : null;
+                const ctx = getDaemonLogsContext();
+
+                /**
+                 * Show whatever log output exists, even if the unit isn't
+                 * "installed" (e.g. a hand-run `daemon __run`). Only when
+                 * there's genuinely nothing to show do we point the user at
+                 * `install` (not installed) or explain the daemon is idle.
+                 */
+                if (!ctx.logExists) {
+                    if (!ctx.installed) {
+                        log.warn(
+                            'Sync daemon is not installed. Run `lumen sync daemon install` first.',
+                        );
+                    } else {
+                        log.info(`No log output yet — the daemon hasn't written ${ctx.logPath}.`);
+                    }
+                    return;
+                }
+
+                const initial = readDaemonLog(ctx.logPath, { lines, sinceMs });
+
+                if (!opts.follow) {
+                    if (opts.json) {
+                        log.plain(
+                            JSON.stringify(
+                                {
+                                    log_path: ctx.logPath,
+                                    count: initial.length,
+                                    lines: initial,
+                                },
+                                null,
+                                2,
+                            ),
+                        );
+                    } else {
+                        for (const line of initial) log.plain(line);
+                    }
+                    return;
+                }
+
+                /** Follow mode streams JSONL when --json, plain lines otherwise. */
+                const emit = opts.json
+                    ? (line: string) => log.plain(JSON.stringify({ line }))
+                    : (line: string) => log.plain(line);
+                const handle = followDaemonLog(buildFollowDeps(ctx.logPath, initial, emit));
+                await handle.done;
+            } catch (err) {
+                log.error(err instanceof Error ? err.message : String(err));
+                process.exitCode = 1;
+            }
+        });
+
     /** Hidden subcommand the launchd/systemd unit invokes. */
     daemon
         .command('__run', { hidden: true })
@@ -447,6 +531,15 @@ function registerSyncDaemon(sync: Command): void {
                 process.exitCode = 1;
             }
         });
+}
+
+/** Parse `--lines` into a positive int, clamped to MAX_LOG_LINES. */
+function parseLineCount(raw: string): number {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) {
+        throw new Error(`--lines must be a positive number; got "${raw}"`);
+    }
+    return Math.min(Math.floor(n), MAX_LOG_LINES);
 }
 
 function parseDaemonConfig(opts: DaemonInstallOptions): SyncDaemonConfig {
