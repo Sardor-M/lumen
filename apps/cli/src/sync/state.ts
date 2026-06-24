@@ -68,6 +68,21 @@ export function getOrInitSyncState(): SyncState {
     return rowToState(row);
 }
 
+/**
+ * True when the device is configured to sync (the `enabled` flag is set).
+ *
+ * Read-only and side-effect free — unlike `getOrInitSyncState`, it does NOT
+ * create the singleton row, so a user who never ran `lumen sync enable` pays
+ * nothing more than a single primary-key lookup. Used by the MCP server to
+ * short-circuit the background push before any push work is scheduled.
+ */
+export function isSyncEnabled(): boolean {
+    const row = getStmt(getDb(), 'SELECT enabled FROM sync_state WHERE id = 1').get() as
+        | { enabled: number }
+        | undefined;
+    return row?.enabled === 1;
+}
+
 export function setEnabled(enabled: boolean): void {
     /** Ensure the row exists before updating. */
     getOrInitSyncState();

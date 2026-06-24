@@ -39,6 +39,7 @@ import { chunk } from '../chunker/index.js';
 import { logQuery } from '../store/query-log.js';
 import { toKnownSkill, budgetHint } from './brain-ops-helpers.js';
 import { scrubPii } from '../pii/index.js';
+import { scheduleBackgroundPush } from '../sync/background-push.js';
 
 export async function startMcpServer(): Promise<void> {
     getDb();
@@ -638,6 +639,14 @@ export async function startMcpServer(): Promise<void> {
                 });
                 insertChunks(chunks);
 
+                /**
+                 * Real-time propagation (#30): fire-and-forget background push.
+                 * `add` itself doesn't journal (sources/chunks aren't synced),
+                 * but the push opportunistically flushes any pending backlog
+                 * and stays correct if the sync model later journals sources.
+                 */
+                scheduleBackgroundPush();
+
                 return {
                     content: [
                         {
@@ -681,6 +690,8 @@ Without compilation, ingested content is searchable but won't appear in the conc
                     writeReport: true,
                     concurrency: 3,
                 });
+                /** Real-time propagation (#30): fire-and-forget background push. */
+                scheduleBackgroundPush();
                 return {
                     content: [
                         {
@@ -816,6 +827,9 @@ a notable fact about a concept. The brain grows automatically.`,
 
             invalidateProfile();
 
+            /** Real-time propagation (#30): fire-and-forget background push. */
+            scheduleBackgroundPush();
+
             return {
                 content: [
                     {
@@ -929,6 +943,8 @@ reason becomes the retirement reason.`,
                 reason: reason ?? null,
                 session_id: sessionId,
             });
+            /** Real-time propagation (#30): fire-and-forget background push. */
+            scheduleBackgroundPush();
             return {
                 content: [
                     {
@@ -970,6 +986,8 @@ Idempotent: re-retiring keeps the original retired_at and reason.`,
             }
             retireConcept(slug, reason);
             const updated = getConcept(slug);
+            /** Real-time propagation (#30): fire-and-forget background push. */
+            scheduleBackgroundPush();
             return {
                 content: [
                     {
@@ -1049,6 +1067,8 @@ total metadata <= 256 KB, max 50 steps - oversized fields are truncated.`,
                     total_tokens: total_tokens ?? null,
                     total_elapsed_ms: total_elapsed_ms ?? null,
                 });
+                /** Real-time propagation (#30): fire-and-forget background push. */
+                scheduleBackgroundPush();
                 return {
                     content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
                 };

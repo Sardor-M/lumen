@@ -205,6 +205,20 @@ Same shape as `docker logs` / `kubectl logs`. `--since` filters on each
 entry's JSON `ts`; `--follow` survives log rotation and exits cleanly on
 Ctrl-C.
 
+### Layer 4 — real-time propagation inside agent sessions
+
+The daemon's cadence (Active ~30s) is fine for idle devices, but too slow
+when a coding agent writes on laptop A and you immediately continue on
+laptop B. So the MCP server propagates writes in real-time without the
+daemon: after every journaling tool call (`add`, `compile`, `capture`,
+`capture_trajectory`, `brain_feedback`, `retire_skill`) it fires a
+fire-and-forget background push and returns the tool response immediately.
+The next pull on a peer device picks the write up sub-second — no manual
+`lumen sync push`, no waiting on the daemon timer. The push is skipped
+entirely when sync is disabled, never blocks the tool response, swallows
+relay failures (the write stays journaled locally for the daemon to retry),
+and coalesces bursts so a long `compile` triggers at most one trailing push.
+
 ## How it works
 
 1. **Ingest** — extract content from any source (articles, papers, video transcripts, code repos, datasets, images, Obsidian clippings), chunk structurally, deduplicate via SHA-256, index with FTS5
